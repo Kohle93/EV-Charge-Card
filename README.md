@@ -8,6 +8,8 @@ und die [Status-Übersicht-Karte](https://github.com/Kohle93/Status-Summary-Card
 
 ![Vorschau](images/preview.png)
 
+<sub>Das Fahrzeug in der Vorschau ist eine eigene, generische Illustration (kein reales Modell) – siehe [Bildnachweis](#bildnachweis).</sub>
+
 ## Features
 
 - Layout: Titel + Werte links, Fahrzeugbild + Werte rechts, Button-Leiste unten (Bild auch links möglich)
@@ -57,21 +59,21 @@ Vollständiges Beispiel: [`examples/beispiel.yaml`](examples/beispiel.yaml)
 
 ```yaml
 type: custom:ev-charge-card
-title: Peugeot e-208
+title: Mein E-Auto
 title_icon: mdi:car-electric
 accent_color: [156, 204, 60]
 image:
-  url: /local/ev/e208.png
+  url: /local/ev/auto.png
   max_height: 170
 fields:
-  - entity: sensor.e208_battery_level
+  - entity: sensor.car_battery_level
     name: Ladestand
     size: large
     show_bar: true
-  - entity: sensor.e208_range
+  - entity: sensor.car_range
     name: Reichweite
 button_bar:
-  entity: select.wattpilot_charging_mode
+  entity: select.wallbox_charging_mode
 buttons:
   - option: Default
     name: Standard
@@ -138,7 +140,7 @@ Farben akzeptieren Farbpicker-Werte `[r, g, b]`, Hex-Codes (`#9ccc3c`) oder HA-F
 
 | Option | Beschreibung |
 |---|---|
-| `url` / `entity` | Bild-URL (z. B. `/local/ev/e208.png`) oder `entity_picture` einer Entität |
+| `url` / `entity` | Bild-URL (z. B. `/local/ev/auto.png`) oder `entity_picture` einer Entität. Eine frei nutzbare Beispielgrafik liegt unter [`examples/auto.png`](examples/auto.png) |
 | `size`, `max_height` | Breite in %, max. Höhe in px |
 | `offset_x` / `offset_y`, `flip`, `shadow`, `hide` | Versatz, spiegeln, Schlagschatten (`false` = aus), ausblenden |
 | `glow_entity` / `glow_state` / `glow_color` | Leuchten unter dem Auto bei bestimmtem Zustand |
@@ -192,6 +194,12 @@ Farben akzeptieren Farbpicker-Werte `[r, g, b]`, Hex-Codes (`#9ccc3c`) oder HA-F
 | `active_state` | Aktiv, wenn die Entität diesen Zustand hat (Standard `on`) |
 | `name`, `icon`, `color`, `width` | Aussehen (`width` = Flex-Faktor) |
 | `tap_action`, `hold_action` | Aktionen (`action`-Buttons ohne Tap-Action: toggle) |
+
+## Bildnachweis
+
+- `images/preview.png` und `examples/auto.png` / `examples/auto.svg` sind eigens für dieses Projekt erstellte, generische Illustrationen und stehen wie der Code unter der MIT-Lizenz.
+- Die Symbole stammen von [Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache 2.0), die Home Assistant mitliefert.
+- Verwende für dein eigenes Dashboard am besten ein Foto deines Autos oder ein Bild, an dem du die Nutzungsrechte hast. Herstellerbilder aus Konfiguratoren oder Pressebereichen sind in der Regel nicht frei weiterverwendbar – bitte nicht ins Repository einchecken.
 
 ## Lizenz
 

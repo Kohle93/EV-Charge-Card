@@ -808,10 +808,10 @@ class EvChargeCard extends HTMLElement {
     const states = hass?.states || {};
     const ids = Object.keys(states);
     const dc = (id) => states[id]?.attributes?.device_class;
-    const soc = ids.find((id) => id.startsWith('sensor.') && dc(id) === 'battery' && /(e_?208|peugeot|car|auto|ev_|vehicle)/i.test(id))
+    const soc = ids.find((id) => id.startsWith('sensor.') && dc(id) === 'battery' && /(car|auto|ev_|vehicle|fahrzeug)/i.test(id))
       || ids.find((id) => id.startsWith('sensor.') && dc(id) === 'battery');
     const range = ids.find((id) => id.startsWith('sensor.') && /(range|reichweite|autonomy)/i.test(id));
-    const sel = ids.find((id) => /^(input_)?select\./.test(id) && /(wattpilot|charg|lade)/i.test(id));
+    const sel = ids.find((id) => /^(input_)?select\./.test(id) && /(wallbox|charg|lade)/i.test(id));
     const opts = sel ? (states[sel].attributes.options || []).slice(0, 4) : [];
     return {
       title: 'Mein E-Auto',
@@ -2063,7 +2063,7 @@ class EvChargeCardEditor extends HTMLElement {
       cc.start_entity, cc.stop_entity, cc.charging_entity, cc.show_entity,
     ].filter(Boolean);
     const devices = new Set(refs.map((e) => hass.entities?.[e]?.device_id).filter(Boolean));
-    const re = /(e_?208|peugeot|vehicle|fahrzeug|\bcar\b|_car_|auto_|ev_|wallbox|wattpilot|charg|lade|range|reichweite|battery_level|soc)/i;
+    const re = /(vehicle|fahrzeug|\bcar\b|_car_|auto_|ev_|wallbox|charg|lade|range|reichweite|battery_level|soc)/i;
     const byDevice = [];
     const byName = [];
     Object.keys(hass.states).forEach((id) => {

@@ -1,13 +1,14 @@
 # EV Charge Card – Beispielkonfiguration (v1.0)
-# Entitäts-IDs sind Platzhalter -> an deine Stellantis-/Wattpilot-Entitäten anpassen.
-# Auto-Bild (am besten PNG mit transparentem Hintergrund) nach /config/www/ev/e208.png legen.
+# Entitäts-IDs sind Platzhalter -> an deine Auto- und Wallbox-Entitäten anpassen.
+# Auto-Bild (am besten PNG mit transparentem Hintergrund) nach /config/www/ev/auto.png legen –
+# z. B. die mitgelieferte, frei nutzbare Illustration examples/auto.png oder ein eigenes Foto, an dem du die Rechte hast.
 # Alles lässt sich auch im visuellen Editor einstellen (Tabs Allgemein · Anzeige · Fahrzeug · Werte · Buttons · Design).
 # Farben: Farbpicker-Werte [r, g, b], Hex (#9ccc3c) oder HA-Farbnamen (green, amber …).
 
 type: custom:ev-charge-card
-title: Peugeot e-208
+title: Mein E-Auto
 title_icon: mdi:car-electric
-subtitle_entity: sensor.wattpilot_car_state      # optional, z. B. Wallbox-Status
+subtitle_entity: sensor.wallbox_car_state      # optional, z. B. Wallbox-Status
 
 # ---------- Anzeige ----------
 image_position: right        # right | left
@@ -36,26 +37,26 @@ icon_shape: circle           # circle | rounded | square
 highlight: glow              # beim Laden: none | glow | pulse | border | scale
 
 image:
-  url: /local/ev/e208.png
+  url: /local/ev/auto.png
   max_height: 170
-  glow_entity: sensor.wattpilot_car_state   # Leuchten unter dem Auto beim Laden
+  glow_entity: sensor.wallbox_car_state   # Leuchten unter dem Auto beim Laden
   glow_state: "Charging"                    # kommagetrennt mehrere möglich
   # state_images:                           # nur YAML: anderes Bild je Zustand der glow_entity
-  #   Charging: /local/ev/e208_laden.png
+  #   Charging: /local/ev/auto_laden.png
   tap_action:
     action: more-info
 
 charge_control:              # Start/Stopp-Buttons unter dem Auto, nur sichtbar wenn eingesteckt
-  show_entity: binary_sensor.wattpilot_car_connected
+  show_entity: binary_sensor.wallbox_car_connected
   show_state: "on"
-  start_entity: button.wattpilot_start_charging
-  stop_entity: button.wattpilot_stop_charging
-  charging_entity: binary_sensor.wattpilot_charging   # markiert, ob gerade geladen wird (auch für highlight)
+  start_entity: button.wallbox_start_charging
+  stop_entity: button.wallbox_stop_charging
+  charging_entity: binary_sensor.wallbox_charging   # markiert, ob gerade geladen wird (auch für highlight)
   charging_state: "on"
   # confirm: true
 
 fields:
-  - entity: sensor.e208_battery_level
+  - entity: sensor.car_battery_level
     name: Ladestand
     size: large
     show_bar: true
@@ -63,16 +64,16 @@ fields:
       - { from: 0,  color: [244, 67, 54] }
       - { from: 20, color: [255, 152, 0] }
       - { from: 50, color: [76, 175, 80] }
-  - entity: sensor.e208_range
+  - entity: sensor.car_range
     name: Reichweite
     icon: mdi:map-marker-distance
     decimals: 0
-  - entity: sensor.wattpilot_power
+  - entity: sensor.wallbox_power
     name: Ladeleistung
     multiply: 0.001           # W -> kW
     unit: kW
     decimals: 1
-  - entity: sensor.wattpilot_car_state
+  - entity: sensor.wallbox_car_state
     name: Wallbox
     icon: mdi:ev-station
     slot: right
@@ -87,7 +88,7 @@ fields:
       navigation_path: /lovelace/energie
 
 button_bar:
-  entity: select.wattpilot_charging_mode    # select.* oder input_select.*
+  entity: select.wallbox_charging_mode    # select.* oder input_select.*
   # style: separate                         # segmented (Standard) | separate
 
 buttons:
@@ -101,7 +102,7 @@ buttons:
   - type: action              # freier Button, z. B. Schalter
     name: PV-Batterie
     icon: mdi:home-battery
-    entity: switch.wattpilot_pv_battery
+    entity: switch.wallbox_pv_battery
   - type: action              # Favoriten-Stern
     icon: mdi:star
     entity: input_boolean.ev_favorit
