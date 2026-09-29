@@ -1,0 +1,110 @@
+# EV Charge Card – Beispielkonfiguration (v1.0)
+# Entitäts-IDs sind Platzhalter -> an deine Stellantis-/Wattpilot-Entitäten anpassen.
+# Auto-Bild (am besten PNG mit transparentem Hintergrund) nach /config/www/ev/e208.png legen.
+# Alles lässt sich auch im visuellen Editor einstellen (Tabs Allgemein · Anzeige · Fahrzeug · Werte · Buttons · Design).
+# Farben: Farbpicker-Werte [r, g, b], Hex (#9ccc3c) oder HA-Farbnamen (green, amber …).
+
+type: custom:ev-charge-card
+title: Peugeot e-208
+title_icon: mdi:car-electric
+subtitle_entity: sensor.wattpilot_car_state      # optional, z. B. Wallbox-Status
+
+# ---------- Anzeige ----------
+image_position: right        # right | left
+title_position: top          # top (volle Breite) | column (linke Spalte)
+left_width: 45               # % Breite linke Spalte
+right_columns: 1             # Werte unter dem Bild nebeneinander
+stack_below: 260             # unter dieser Kartenbreite (px) Bild unter den Titel, 0 = nie
+# scale: 1                   # ganze Karte skalieren (0.5 – 2)
+
+# ---------- Design (wie Abfall-Karte / Status-Übersicht) ----------
+accent_color: [156, 204, 60]
+card_bg_mode: custom         # theme | tinted | accent | custom | none
+card_bg_color: [31, 45, 31]
+card_bg_gradient: true
+card_radius: 24
+card_border_mode: theme      # theme | none | accent | custom
+# background_image: /local/ev/garage.jpg
+# overlay_color: [0, 0, 0]
+# overlay_opacity: 45
+# card_blur: 8
+
+bg_mode: tinted              # Werte-Kacheln: theme | tinted | accent | custom | none
+bg_opacity: 10
+icon_bg_mode: accent         # none | accent | theme | custom
+icon_shape: circle           # circle | rounded | square
+highlight: glow              # beim Laden: none | glow | pulse | border | scale
+
+image:
+  url: /local/ev/e208.png
+  max_height: 170
+  glow_entity: sensor.wattpilot_car_state   # Leuchten unter dem Auto beim Laden
+  glow_state: "Charging"                    # kommagetrennt mehrere möglich
+  # state_images:                           # nur YAML: anderes Bild je Zustand der glow_entity
+  #   Charging: /local/ev/e208_laden.png
+  tap_action:
+    action: more-info
+
+charge_control:              # Start/Stopp-Buttons unter dem Auto, nur sichtbar wenn eingesteckt
+  show_entity: binary_sensor.wattpilot_car_connected
+  show_state: "on"
+  start_entity: button.wattpilot_start_charging
+  stop_entity: button.wattpilot_stop_charging
+  charging_entity: binary_sensor.wattpilot_charging   # markiert, ob gerade geladen wird (auch für highlight)
+  charging_state: "on"
+  # confirm: true
+
+fields:
+  - entity: sensor.e208_battery_level
+    name: Ladestand
+    size: large
+    show_bar: true
+    color_thresholds:
+      - { from: 0,  color: [244, 67, 54] }
+      - { from: 20, color: [255, 152, 0] }
+      - { from: 50, color: [76, 175, 80] }
+  - entity: sensor.e208_range
+    name: Reichweite
+    icon: mdi:map-marker-distance
+    decimals: 0
+  - entity: sensor.wattpilot_power
+    name: Ladeleistung
+    multiply: 0.001           # W -> kW
+    unit: kW
+    decimals: 1
+  - entity: sensor.wattpilot_car_state
+    name: Wallbox
+    icon: mdi:ev-station
+    slot: right
+    icon_shape: rounded       # Design pro Wert überschreibbar
+    state_map:
+      Idle: Bereit
+      Charging: Lädt
+      WaitCar: Wartet auf Auto
+      Complete: Fertig
+    tap_action:
+      action: navigate
+      navigation_path: /lovelace/energie
+
+button_bar:
+  entity: select.wattpilot_charging_mode    # select.* oder input_select.*
+  # style: separate                         # segmented (Standard) | separate
+
+buttons:
+  - option: Default
+    name: Standard
+    icon: mdi:ev-station
+  - option: Eco
+    icon: mdi:leaf
+  - option: Next Trip
+    icon: mdi:calendar-clock
+  - type: action              # freier Button, z. B. Schalter
+    name: PV-Batterie
+    icon: mdi:home-battery
+    entity: switch.wattpilot_pv_battery
+  - type: action              # Favoriten-Stern
+    icon: mdi:star
+    entity: input_boolean.ev_favorit
+    tap_action:
+      action: perform-action
+      perform_action: script.ev_favorit_laden
