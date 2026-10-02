@@ -1,4 +1,4 @@
-# EV Charge Card – Beispielkonfiguration (v1.1) mit zwei Fahrzeugen
+# EV Charge Card – Beispielkonfiguration (v1.2) mit zwei Fahrzeugen
 # Entitäts-IDs sind Platzhalter -> an deine Auto- und Wallbox-Entitäten anpassen.
 # Auto-Bilder (am besten PNG mit transparentem Hintergrund) nach /config/www/ev/ legen –
 # z. B. die mitgelieferten, frei nutzbaren Illustrationen examples/auto.png und examples/auto-2.png
@@ -64,8 +64,20 @@ vehicles:
         multiply: 0.001         # W -> kW
         unit: kW
         decimals: 1
+    service:                   # Wartungs-Fähnchen
+      days_entity: sensor.car_tage_bis_wartung
+      days_threshold: 30         # zeigen ab ≤ 30 Tagen …
+      km_entity: sensor.car_km_bis_wartung
+      km_threshold: 1000         # … oder ≤ 1000 km
+      style: flag                # flag (Fähnchen) | icon (Symbol im Kreis) | symbol (nur Symbol) | chip
+      position: top-right        # top-right | top-left | bottom-right | bottom-left | image | title
+      # color: [255, 152, 0]
+      # overdue_color: [244, 67, 54]
+      # pulse: true
     button_bar:
       entity: select.wallbox_charging_mode
+      show_entity: sensor.wallbox_car_state   # Leiste nur zeigen, wenn …
+      show_state: "connected, ready, charging" # … die Wallbox einen dieser Zustände meldet
     buttons:
       - option: Default
         name: Standard
@@ -87,6 +99,11 @@ vehicles:
     image:
       url: /local/ev/auto-2.png
       max_height: 160
+    service:
+      days_entity: sensor.zweitwagen_tage_bis_wartung
+      km_entity: sensor.zweitwagen_km_bis_wartung
+      style: chip
+      position: image
     fuel:                        # Glow leuchtet, sobald der Tank ≤ threshold ist
       entity: sensor.zweitwagen_tank
       threshold: 15              # in der Einheit der Entität, meist %

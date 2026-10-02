@@ -17,6 +17,8 @@ und die [Status-Übersicht-Karte](https://github.com/Kohle93/Status-Summary-Card
 - **Antrieb pro Fahrzeug:** Elektro, Hybrid oder Benzin/Diesel – Laden, Start/Stopp und Glow passen sich automatisch an
 - **Tank-Warnung:** Bei Hybrid und Benzin/Diesel leuchtet der Glow unter dem Auto in einer Warnfarbe, sobald der Tank unter X % fällt
 - Eigene Akzentfarbe pro Fahrzeug möglich
+- **Wartungs-Fähnchen:** Entitäten für „Tage bis Wartung“ und „km bis Wartung“ hinterlegen – steht die Wartung in den nächsten X Tagen oder X km an, erscheint ein Fähnchen mit Symbol (Form, Position, Farbe, Text, Größe frei wählbar, rot wenn überfällig)
+- **Button-Leiste mit Bedingung:** nur anzeigen, wenn eine Entität einen bestimmten Zustand meldet (z. B. Wallbox „connected“ oder „ready“)
 - Layout: Titel + Werte links, Fahrzeugbild + Werte rechts, Button-Leiste unten (Bild auch links möglich)
 - Sehr schmale Karten brechen automatisch untereinander um (Schwelle einstellbar)
 - **Gemeinsames Design-System:** Hintergrund *Theme / Theme + Farbton / Akzentfarbe / eigene Farbe / transparent* mit Deckkraft, Farbverlauf und Glas-Effekt – für die Karte und für die Werte-Kacheln
@@ -36,9 +38,9 @@ Aufgebaut wie bei der Abfall-Karte und der Status-Übersicht. Über den Tabs wä
 |---|---|
 | **Allgemein** | Antrieb, Titel, Titel-Symbol, Untertitel, eigene Farbe, Aktionen – darunter die Liste aller Fahrzeuge (sortieren, löschen) und Buttons zum Anlegen (Elektro / Hybrid / Benzin-Diesel) |
 | **Anzeige** | Mehrere Fahrzeuge (Punkte, Wischen, merken), Bild-/Titelposition, Spaltenbreite, Skalierung, Mindesthöhe, Umbruch-Schwelle |
-| **Fahrzeug** | Fahrzeugbild, Lade-Glow, Tank-Warnung, Start/Stopp mit Beschriftung, Farben und eigenen Aktionen (je nach Antrieb) |
+| **Fahrzeug** | Live-Vorschau, Fahrzeugbild, Lade-Glow, Tank-Warnung, Start/Stopp (je nach Antrieb) und Wartungs-Fähnchen |
 | **Werte** | Liste aller Werte (sortieren, bearbeiten, löschen), Bearbeiten-Seite mit Live-Vorschau, Farbschwellen und Zustandsübersetzung per Klick, Vorschläge aus deinen Fahrzeug-/Wallbox-Geräten |
-| **Buttons** | Button-Leiste, „Alle Optionen übernehmen“, Liste aller Buttons mit Bearbeiten-Seite |
+| **Buttons** | Button-Leiste inkl. Bedingung „Nur anzeigen, wenn …“, „Alle Optionen übernehmen“, Liste aller Buttons mit Bearbeiten-Seite |
 | **Design** | Akzentfarbe, Karte (Hintergrund, Bild, Rahmen) und Werte (Hintergrund, Symbol, Text, Rahmen), Hervorhebung – mit Live-Vorschau |
 
 Farben werden per Farbpicker gewählt. Ältere Konfigurationen (v0.x mit `layout:` / `style:` und v1.0 mit nur einem Fahrzeug) werden automatisch übernommen und beim nächsten Speichern im Editor ins neue Format mit `vehicles:` umgeschrieben.
@@ -112,7 +114,7 @@ Farben akzeptieren Farbpicker-Werte `[r, g, b]`, Hex-Codes (`#9ccc3c`) oder HA-F
 | `subtitle` / `subtitle_entity` | Untertitel (Text oder Zustand einer Entität) |
 | `title_tap_action` / `title_hold_action` | Aktionen auf dem Titel |
 | `accent_color` | Optional: eigene Akzentfarbe nur für dieses Fahrzeug |
-| `image`, `charge_control`, `fuel`, `fields`, `button_bar`, `buttons` | siehe unten – alles pro Fahrzeug |
+| `image`, `charge_control`, `fuel`, `service`, `fields`, `button_bar`, `buttons` | siehe unten – alles pro Fahrzeug |
 
 | Antrieb | Laden / Lade-Glow / Start-Stopp | Tank-Warnung |
 |---|---|---|
@@ -191,6 +193,25 @@ Farben akzeptieren Farbpicker-Werte `[r, g, b]`, Hex-Codes (`#9ccc3c`) oder HA-F
 | `threshold` | `15` | Glow leuchtet, sobald der Füllstand ≤ diesem Wert ist (Einheit der Entität, meist %) |
 | `color` | Orange | Farbe von Glow und Hervorhebung bei fast leerem Tank |
 
+### `service` – Wartungs-Fähnchen (alle Antriebe)
+
+Das Fähnchen erscheint, sobald **eine** der beiden Bedingungen erfüllt ist. Ist ein Wert ≤ 0, gilt die Wartung als überfällig (Farbe `overdue_color`, Text „überfällig“).
+
+| Option | Standard | Beschreibung |
+|---|---|---|
+| `days_entity` / `days_threshold` | – / `30` | Entität „Tage bis Wartung“ – Fähnchen ab ≤ X Tagen |
+| `km_entity` / `km_threshold` | – / `1000` | Entität „km bis Wartung“ – Fähnchen ab ≤ X km |
+| `style` | `flag` | `flag` (Fähnchen mit Text) / `icon` (Symbol im Kreis) / `symbol` (nur Symbol, ohne Hintergrund) / `chip` (abgerundet mit Text) |
+| `position` | `top-right` | `top-right` / `top-left` / `bottom-right` / `bottom-left` / `image` (am Fahrzeugbild) / `title` (neben dem Titel) |
+| `icon`, `label` | `mdi:wrench-clock`, `Wartung` | Symbol und Text |
+| `color`, `overdue_color` | Orange, Rot | Farbe normal / überfällig |
+| `text_color` | automatisch | *Nur YAML:* eigene Textfarbe |
+| `show_label`, `show_value` | `true` | Text bzw. Rest-Tage / Rest-km anzeigen |
+| `size` | `12` | Schriftgröße in px (Symbol wächst mit) |
+| `offset_x`, `offset_y` | `0` | Feinjustierung der Position in px |
+| `pulse` | `false` | Pulsieren, solange die Wartung ansteht |
+| `tap_action`, `hold_action` | more-info | Aktionen (Standard: Details der Tage-Entität) |
+
 ### `charge_control` – Laden Start / Stopp (Elektro, Hybrid)
 
 | Option | Beschreibung |
@@ -227,6 +248,9 @@ Farben akzeptieren Farbpicker-Werte `[r, g, b]`, Hex-Codes (`#9ccc3c`) oder HA-F
 | `height` | `44` | Höhe in px |
 | `active_color`, `active_text_color`, `background` | Akzent / Kontrast / wie Kacheln | Farben |
 | `hide` | `false` | Leiste ausblenden |
+| `show_entity` | – | Leiste nur anzeigen, wenn diese Entität … |
+| `show_state` | `on` | … einen dieser Zustände hat (kommagetrennt, Groß-/Kleinschreibung egal), z. B. `connected, ready` |
+| `show_mode` | `is` | `is` = Zustand muss passen, `is_not` = Zustand darf nicht passen |
 
 ### `buttons[]`
 

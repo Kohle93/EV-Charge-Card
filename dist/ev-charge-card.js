@@ -16,7 +16,7 @@
  *   Ressource: /local/ev-charge-card/ev-charge-card.js  (Typ: JavaScript-Modul)
  */
 
-const CARD_VERSION = '1.1.0';
+const CARD_VERSION = '1.2.1';
 const CARD_TYPE = 'ev-charge-card';
 const EDITOR_TYPE = 'ev-charge-card-editor';
 
@@ -173,13 +173,21 @@ const ITEM_STYLE_KEYS = [
 
 const IMAGE_DEFAULTS = { size: 100, max_height: 180, offset_x: 0, offset_y: 0, flip: false, shadow: true, hide: false };
 const CC_DEFAULTS = { show_names: true, confirm: false, size: 36 };
-const BAR_DEFAULTS = { style: 'segmented', height: 44, show_names: true, show_icons: true, hide: false };
+const BAR_DEFAULTS = { style: 'segmented', height: 44, show_names: true, show_icons: true, hide: false, show_mode: 'is' };
 const FUEL_DEFAULTS = { threshold: 15, color: [255, 152, 0] };
+const SERVICE_DEFAULTS = {
+  days_threshold: 30, km_threshold: 1000, style: 'flag', position: 'top-right', icon: 'mdi:wrench-clock',
+  label: 'Wartung', color: [255, 152, 0], overdue_color: [244, 67, 54], show_label: true, show_value: true,
+  size: 12, offset_x: 0, offset_y: 0, pulse: false,
+};
+// flag = Fähnchen mit Text, icon = Symbol im Kreis, symbol = nur Symbol, chip = abgerundet mit Text
+const SERVICE_STYLES = ['flag', 'icon', 'symbol', 'chip'];
+const SERVICE_POSITIONS = ['top-right', 'top-left', 'bottom-right', 'bottom-left', 'image', 'title'];
 
 // Diese Schlüssel gehören zu einem Fahrzeug (vehicles[]), alles andere gilt für die ganze Karte
 const VEHICLE_KEYS = [
   'vehicle_type', 'title', 'title_icon', 'subtitle', 'subtitle_entity', 'title_tap_action', 'title_hold_action',
-  'image', 'charge_control', 'fuel', 'fields', 'button_bar', 'buttons',
+  'image', 'charge_control', 'fuel', 'service', 'fields', 'button_bar', 'buttons',
 ];
 const VEHICLE_TYPES = ['ev', 'hybrid', 'combustion'];
 const TYPE_ICONS = { ev: 'mdi:car-electric', hybrid: 'mdi:car-electric-outline', combustion: 'mdi:car' };
@@ -561,11 +569,80 @@ const glowInfo = (cfg, hass) => {
 };
 const isCharging = (cfg, hass) => glowInfo(cfg, hass).active;
 
+// Bedingung für die Button-Leiste: nur anzeigen, wenn Entität einen der Zustände hat (bzw. nicht hat)
+const barVisible = (cfg, hass) => {
+  const bb = cfg.button_bar || {};
+  if (!bb.show_entity) return true;
+  const st = hass?.states?.[bb.show_entity];
+  const cur = String(st ? st.state : '').trim().toLowerCase();
+  const want = String(bb.show_state ?? 'on').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const hit = want.includes(cur);
+  return bb.show_mode === 'is_not' ? !hit : hit;
+};
+
+const numState = (hass, entity) => {
+  const st = hass?.states?.[entity];
+  return st && isNum(st.state) ? Number(st.state) : null;
+};
+
+// Wartung: fällig, sobald Tage bis Wartung ≤ days_threshold oder km bis Wartung ≤ km_threshold
+const serviceInfo = (cfg, hass) => {
+  const sv = cfg.service || {};
+  if (!sv.days_entity && !sv.km_entity) return null;
+  const d = (k) => (has(sv[k]) ? sv[k] : SERVICE_DEFAULTS[k]);
+  const days = sv.days_entity ? numState(hass, sv.days_entity) : null;
+  const km = sv.km_entity ? numState(hass, sv.km_entity) : null;
+  const daysDue = days !== null && days <= Number(d('days_threshold'));
+  const kmDue = km !== null && km <= Number(d('km_threshold'));
+  const overdue = (days !== null && days <= 0) || (km !== null && km <= 0);
+  return { days, km, daysDue, kmDue, due: daysDue || kmDue, overdue };
+};
+
+const serviceText = (cfg, hass, info, all = false) => {
+  const sv = cfg.service || {};
+  const parts = [];
+  const nf = new Intl.NumberFormat(localeOf(hass), { maximumFractionDigits: 0 });
+  if (info.days !== null && (all || info.daysDue)) {
+    parts.push(info.days <= 0 ? 'überfällig' : `${nf.format(info.days)} ${Math.round(info.days) === 1 ? 'Tag' : 'Tage'}`);
+  }
+  if (info.km !== null && (all || info.kmDue)) {
+    const unit = hass?.states?.[sv.km_entity]?.attributes?.unit_of_measurement || 'km';
+    parts.push(info.km <= 0 ? (parts.includes('überfällig') ? '' : 'überfällig') : `${nf.format(info.km)} ${unit}`);
+  }
+  return parts.filter(Boolean).join(' · ');
+};
+
+// Wartungs-Fähnchen. where: 'slide' (Ecken), 'image' oder 'title'. force = immer zeigen (Editor-Vorschau)
+const renderService = (cfg, hass, where, force = false) => {
+  const sv = cfg.service || {};
+  const info = serviceInfo(cfg, hass);
+  if (!info || (!info.due && !force)) return '';
+  const d = (k) => (has(sv[k]) ? sv[k] : SERVICE_DEFAULTS[k]);
+  let pos = SERVICE_POSITIONS.includes(d('position')) ? d('position') : 'top-right';
+  if (pos === 'title' && !cfg.title && !cfg.title_icon && !cfg.subtitle && !cfg.subtitle_entity) pos = 'top-right';
+  if (pos === 'image' && cfg.image?.hide) pos = 'top-right';
+  const at = pos === 'image' || pos === 'title' ? pos : 'slide';
+  if (at !== where) return '';
+  const style = SERVICE_STYLES.includes(d('style')) ? d('style') : 'flag';
+  const bg = colorInfo(info.overdue ? d('overdue_color') : d('color')) || colorInfo(SERVICE_DEFAULTS.color);
+  const fg = colorInfo(sv.text_color)?.css || (bg.rgb ? contrastText(bg.rgb) : '#fff');
+  const value = d('show_value') ? serviceText(cfg, hass, info.due ? info : { ...info, daysDue: true, kmDue: true }) : '';
+  const label = d('show_label') ? d('label') : '';
+  const text = style === 'icon' || style === 'symbol' ? '' : [label, value].filter(Boolean).join(' · ');
+  const vars = styleString({
+    '--svc-bg': bg.css, '--svc-fg': fg, '--svc-size': px(d('size')),
+    '--svc-x': px(d('offset_x')), '--svc-y': px(d('offset_y')),
+  });
+  const tip = `${d('label')}: ${serviceText(cfg, hass, info, true)}`;
+  return `<div class="svc ${style} p-${pos} ${d('pulse') ? 'pulse' : ''} ${info.overdue ? 'overdue' : ''}" data-act="svc" title="${esc(tip)}" style="${esc(vars)}">`
+    + `<ha-icon icon="${esc(d('icon'))}"></ha-icon>${text ? `<span>${esc(text)}</span>` : ''}</div>`;
+};
+
 /* ------------------------------------------------------------------ */
 /*  HTML-Bausteine                                                    */
 /* ------------------------------------------------------------------ */
 
-const renderHeader = (cfg, hass) => {
+const renderHeader = (cfg, hass, opts = {}) => {
   let subtitle = cfg.subtitle || '';
   if (cfg.subtitle_entity) {
     const st = hass?.states?.[cfg.subtitle_entity];
@@ -580,6 +657,7 @@ const renderHeader = (cfg, hass) => {
         ${cfg.title ? `<div class="title">${esc(cfg.title)}</div>` : ''}
         ${subtitle ? `<div class="subtitle">${esc(subtitle)}</div>` : ''}
       </div>
+      ${renderService(cfg, hass, 'title', opts.forceService)}
     </div>`;
 };
 
@@ -612,7 +690,7 @@ const renderChargeControl = (cfg, hass) => {
   return `<div class="cc">${btn('start')}${btn('stop')}</div>`;
 };
 
-const renderImage = (cfg, hass) => {
+const renderImage = (cfg, hass, opts = {}) => {
   const im = cfg.image || {};
   let url = im.url;
   if (im.entity) url = hass?.states?.[im.entity]?.attributes?.entity_picture || url;
@@ -635,6 +713,7 @@ const renderImage = (cfg, hass) => {
         ${url ? `<img src="${esc(url)}" alt="" draggable="false">` : `<ha-icon class="placeholder" icon="${TYPE_ICONS[type]}"></ha-icon>`}
       </div>
       ${renderChargeControl(cfg, hass)}
+      ${renderService(cfg, hass, 'image', opts.forceService)}
     </div>`;
 };
 
@@ -670,7 +749,7 @@ const renderField = (f, i, cfg, hass, override = null) => {
 const renderBar = (cfg, hass, opts = {}) => {
   const bb = cfg.button_bar || {};
   const buttons = opts.buttons || cfg.buttons || [];
-  if (!buttons.length || (bb.hide && !opts.force)) return '';
+  if (!buttons.length || (!opts.force && (bb.hide || !barVisible(cfg, hass)))) return '';
   const showNames = bb.show_names !== false;
   const showIcons = bb.show_icons !== false;
   const btns = buttons.map((b, i) => {
@@ -707,7 +786,8 @@ const renderBar = (cfg, hass, opts = {}) => {
   return `<div class="bar-row ${bb.style === 'separate' ? 'separate' : 'segmented'} ${showNames ? 'names' : ''}">${btns}</div>`;
 };
 
-const renderBody = (cfg, hass) => {
+// opts.forceService: Wartungs-Fähnchen immer zeigen (Editor-Vorschau)
+const renderBody = (cfg, hass, opts = {}) => {
   const left = [];
   const right = [];
   (cfg.fields || []).forEach((f, i) => {
@@ -717,18 +797,19 @@ const renderBody = (cfg, hass) => {
   const cols = Math.max(1, Number(cfg.right_columns) || 1);
   const titleInColumn = cfg.title_position === 'column';
   return `
-    ${titleInColumn ? '' : renderHeader(cfg, hass)}
+    ${titleInColumn ? '' : renderHeader(cfg, hass, opts)}
     <div class="main ${cfg.image_position === 'left' ? 'img-left' : ''}">
       <div class="col-left">
-        ${titleInColumn ? renderHeader(cfg, hass) : ''}
+        ${titleInColumn ? renderHeader(cfg, hass, opts) : ''}
         ${left.length ? `<div class="fields fields-left">${left.join('')}</div>` : ''}
       </div>
       <div class="col-right">
-        ${cfg.image?.hide ? '' : renderImage(cfg, hass)}
+        ${cfg.image?.hide ? '' : renderImage(cfg, hass, opts)}
         ${right.length ? `<div class="fields-right" style="grid-template-columns:repeat(${cols},minmax(0,1fr))">${right.join('')}</div>` : ''}
       </div>
     </div>
-    ${renderBar(cfg, hass)}`;
+    ${renderBar(cfg, hass)}
+    ${renderService(cfg, hass, 'slide', opts.forceService)}`;
 };
 
 /* ------------------------------------------------------------------ */
@@ -751,7 +832,7 @@ const CARD_CSS = `
   .viewport { position:relative; overflow:hidden; touch-action: pan-y; transition: height .3s ease; }
   .track { display:flex; align-items:flex-start; transition: transform .35s cubic-bezier(.25,.8,.25,1); }
   .track.dragging { transition:none; }
-  .slide { flex:0 0 100%; min-width:0; box-sizing:border-box; padding: var(--evc-pad, 16px);
+  .slide { position:relative; flex:0 0 100%; min-width:0; box-sizing:border-box; padding: var(--evc-pad, 16px);
     display:flex; flex-direction:column; gap: var(--evc-gap, 12px); }
   .dots { display:flex; justify-content:center; align-items:center; gap:2px;
     margin-top: calc(var(--evc-pad, 16px) * -.55); padding-bottom: calc(var(--evc-pad, 16px) * .45); }
@@ -860,6 +941,35 @@ const CARD_CSS = `
   }
   @media (prefers-reduced-motion: reduce) { .evc.hl-pulse, .glow.on { animation:none; } .glow.on { opacity:.5; } }
 
+  /* ---------- Wartungs-Fähnchen ---------- */
+  .svc { position:absolute; z-index:3; display:inline-flex; align-items:center; gap:.4em; box-sizing:border-box;
+    font-size: var(--svc-size, 12px); font-weight:600; line-height:1.1; white-space:nowrap; cursor:pointer;
+    background: var(--svc-bg); color: var(--svc-fg); transform: translate(var(--svc-x, 0), var(--svc-y, 0));
+    -webkit-tap-highlight-color: transparent; }
+  .svc ha-icon { --mdc-icon-size: calc(var(--svc-size, 12px) * 1.4); flex:0 0 auto; }
+  .svc.chip { padding:.45em .85em .45em .6em; border-radius:999px; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+  .svc.icon { width: calc(var(--svc-size, 12px) * 2.5); height: calc(var(--svc-size, 12px) * 2.5); justify-content:center;
+    padding:0; border-radius:50%; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+  .svc.icon ha-icon { --mdc-icon-size: calc(var(--svc-size, 12px) * 1.5); }
+  .svc.flag { padding:.55em .9em .55em 1.35em; filter: drop-shadow(0 2px 3px rgba(0,0,0,.25)); }
+  .svc.flag.p-top-right, .svc.flag.p-bottom-right { right:0; clip-path: polygon(.8em 0, 100% 0, 100% 100%, .8em 100%, 0 50%); }
+  .svc.flag.p-top-left, .svc.flag.p-bottom-left { left:0; padding:.55em 1.35em .55em .9em;
+    clip-path: polygon(0 0, 100% 0, calc(100% - .8em) 50%, 100% 100%, 0 100%); }
+  .svc.p-top-right, .svc.p-top-left { top: calc(var(--evc-pad, 16px) * .75); }
+  .svc.p-bottom-right, .svc.p-bottom-left { bottom: calc(var(--evc-pad, 16px) * .75); }
+  .svc.p-top-right:not(.flag), .svc.p-bottom-right:not(.flag) { right: calc(var(--evc-pad, 16px) * .6); }
+  .svc.p-top-left:not(.flag), .svc.p-bottom-left:not(.flag) { left: calc(var(--evc-pad, 16px) * .6); }
+  .svc.flag.p-image, .svc.flag.p-title { clip-path: polygon(.8em 0, 100% 0, 100% 100%, .8em 100%, 0 50%); }
+  .svc.symbol { background:none; color: var(--svc-bg); padding:0; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
+  .svc.symbol ha-icon { --mdc-icon-size: calc(var(--svc-size, 12px) * 2); }
+  .svc.p-image { top:0; right:0; }
+  .svc.p-title { position:relative; margin-left:auto; flex:0 0 auto; }
+  .svc.pulse.chip, .svc.pulse.icon { animation: evc-svc 1.8s ease-in-out infinite; }
+  .svc.pulse.flag, .svc.pulse.symbol { animation: evc-svc-flag 1.8s ease-in-out infinite; }
+  @keyframes evc-svc { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--svc-bg) 65%, transparent); } 50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--svc-bg) 0%, transparent); } }
+  @keyframes evc-svc-flag { 0%,100% { opacity:1; } 50% { opacity:.55; } }
+  @media (prefers-reduced-motion: reduce) { .svc.pulse { animation:none; } }
+
   /* ---------- Schmale Karte: untereinander (Schwelle: stack_below) ---------- */
   .stacked .main, .stacked .main.img-left { flex-direction:column; }
   .stacked .col-left, .stacked .col-right { display:contents; }
@@ -964,6 +1074,9 @@ class EvChargeCard extends HTMLElement {
       add(c.image?.entity);
       add(c.image?.glow_entity);
       add(c.fuel?.entity);
+      add(c.service?.days_entity);
+      add(c.service?.km_entity);
+      add(c.button_bar?.show_entity);
       const cc = c.charge_control || {};
       [cc.show_entity, cc.start_entity, cc.stop_entity, cc.charging_entity].forEach(add);
       add(c.button_bar?.entity);
@@ -1178,6 +1291,10 @@ class EvChargeCard extends HTMLElement {
       return { entity: im.entity || im.glow_entity || c.fuel?.entity, tap: im.tap_action, hold: im.hold_action };
     }
     if (kind === 'title') return { entity: c.subtitle_entity, tap: c.title_tap_action, hold: c.title_hold_action };
+    if (kind === 'svc') {
+      const sv = c.service || {};
+      return { entity: sv.days_entity || sv.km_entity, tap: sv.tap_action || { action: 'more-info' }, hold: sv.hold_action };
+    }
     return {};
   }
 
@@ -1284,7 +1401,7 @@ const T = {
   intro: {
     general: 'Deine Fahrzeuge in dieser Karte – und Antrieb, Titel und Untertitel des oben gewählten Fahrzeugs. Bei mehreren Fahrzeugen schaltest du in der Karte per Wischen oder über die Punkte unten um.',
     display: 'Grundlayout der Karte: wo Bild und Titel sitzen, wie breit die Spalten sind und ab welcher Breite die Karte untereinander umbricht. Farben und Transparenz findest du im Tab „Design“.',
-    vehicle: 'Fahrzeugbild und Glow: beim Elektroauto leuchtet er beim Laden, bei Hybrid und Benzin/Diesel zusätzlich als Warnung, wenn der Tank fast leer ist. Start/Stopp erscheint unter dem Auto, sobald es eingesteckt ist.',
+    vehicle: 'Fahrzeugbild und Glow: beim Elektroauto leuchtet er beim Laden, bei Hybrid und Benzin/Diesel zusätzlich als Warnung, wenn der Tank fast leer ist. Start/Stopp erscheint unter dem Auto, sobald es eingesteckt ist. Unten legst du das Wartungs-Fähnchen fest.',
     fields: 'Jeder Wert (Ladestand, Reichweite, Ladeleistung …) hat sein eigenes Symbol, seine eigene Farbe und optional ein komplett eigenes Design.',
     buttons: 'Die Button-Leiste unten: Optionen direkt aus einer Auswahl-Entität (z. B. Lademodus) oder freie Aktions-Buttons wie Favorit ☆.',
     design: 'Standard-Design für Karte, Werte und Button-Leiste – genau wie bei der Abfall-Karte und der Status-Übersicht. Jeder Wert kann das im Tab „Werte“ individuell überschreiben.',
@@ -1292,6 +1409,8 @@ const T = {
   groups: {
     title_actions: 'Aktionen', arrangement: 'Anordnung', size: 'Größe & Umbruch', carousel: 'Mehrere Fahrzeuge',
     vehicle: 'Fahrzeug', vehicle_color: 'Farbe', fuel: 'Tank-Warnung',
+    service: 'Wartung', service_look: 'Wartung – Aussehen & Position', service_actions: 'Wartung – Aktionen',
+    bar_condition: 'Nur anzeigen, wenn …',
     image: 'Fahrzeugbild', glow: 'Lade-Glow (Laden)', image_actions: 'Aktionen',
     cc: 'Laden Start / Stopp', cc_look: 'Beschriftung & Farben', cc_actions: 'Eigene Aktionen',
     value: 'Entität & Wert', placement: 'Position & Größe', look: 'Symbol & Farbe', progress: 'Fortschrittsbalken',
@@ -1333,6 +1452,14 @@ const T = {
     vehicle: {
       vehicle_type: 'Antrieb', title: 'Name / Titel', own_accent: 'Eigene Akzentfarbe für dieses Fahrzeug', accent_color: 'Akzentfarbe dieses Fahrzeugs',
     },
+    service: {
+      style: 'Darstellung', days_entity: 'Tage bis Wartung (Entität)', days_threshold: 'Zeigen ab (Tage)',
+      km_entity: 'km bis Wartung (Entität)', km_threshold: 'Zeigen ab (km)',
+      style: 'Form', position: 'Position', icon: 'Symbol', label: 'Text',
+      color: 'Farbe', overdue_color: 'Farbe wenn überfällig', show_label: 'Text anzeigen', show_value: 'Rest-Tage / Rest-km anzeigen',
+      size: 'Größe', offset_x: 'Versatz horizontal', offset_y: 'Versatz vertikal', pulse: 'Pulsieren',
+      tap_action: 'Aktion beim Antippen', hold_action: 'Aktion beim Halten',
+    },
     fuel: {
       entity: 'Tankfüllstand (Entität)', attribute: 'Attribut statt Zustand (optional)', threshold: 'Warnen ab Füllstand (höchstens)', color: 'Farbe der Warnung',
     },
@@ -1363,7 +1490,8 @@ const T = {
     map: { state: 'Zustand', text: 'Anzeige' },
     bar: {
       entity: 'Auswahl-Entität (select / input_select)', style: 'Stil', height: 'Höhe', show_names: 'Namen anzeigen', show_icons: 'Symbole anzeigen',
-      hide: 'Leiste ausblenden', active_color: 'Farbe aktiver Button', active_text_color: 'Textfarbe aktiver Button', background: 'Hintergrund der Leiste',
+      hide: 'Leiste ausblenden', show_entity: 'Entität', show_state: 'Zustand / Zustände', show_mode: 'Bedingung',
+      active_color: 'Farbe aktiver Button', active_text_color: 'Textfarbe aktiver Button', background: 'Hintergrund der Leiste',
     },
     button: {
       type: 'Art des Buttons', option: 'Option der Auswahl-Entität', entity: 'Entität', active_state: 'Aktiv bei Zustand',
@@ -1401,7 +1529,14 @@ const T = {
       stop_action: 'Überschreibt die Stopp-Entität.',
     },
     field: { multiply: 'z. B. 0.001 für W → kW', color: 'Farbschwellen weiter unten haben Vorrang.' },
-    bar: { background: 'Leer = wie die Werte-Kacheln (Tab „Design“).' },
+    bar: {
+      background: 'Leer = wie die Werte-Kacheln (Tab „Design“).',
+      show_entity: 'Leer = Leiste immer anzeigen. Z. B. die Wallbox: Leiste nur zeigen, wenn ein Auto verbunden ist.',
+    },
+    service: {
+      style: 'Fähnchen und Chip zeigen Text und Rest-Tage/-km, die Symbol-Varianten nur das Symbol (Details per Antippen). In den Ecken hängt das Fähnchen direkt am Kartenrand.',
+      pulse: 'Lässt das Fähnchen pulsieren, solange die Wartung ansteht.',
+    },
     button: { width: '1 = normal, 0.5 = halb, 2 = doppelt', active_state: 'Standard: on' },
   },
   opt: {
@@ -1421,6 +1556,12 @@ const T = {
     size: { small: 'Klein', normal: 'Normal', large: 'Groß' },
     bar_style: { segmented: 'Segmentiert (Pille)', separate: 'Einzelne Buttons' },
     btn_type: { option: 'Option der Auswahl-Entität', action: 'Freie Aktion (z. B. Favorit ☆)' },
+    service_style: { flag: 'Fähnchen mit Text', icon: 'Symbol im Kreis', symbol: 'Nur Symbol (ohne Hintergrund)', chip: 'Chip mit Text (abgerundet)' },
+    service_position: {
+      'top-right': 'Oben rechts', 'top-left': 'Oben links', 'bottom-right': 'Unten rechts', 'bottom-left': 'Unten links',
+      image: 'Am Fahrzeugbild', title: 'Neben dem Titel',
+    },
+    show_mode: { is: '… einen dieser Zustände hat', is_not: '… keinen dieser Zustände hat' },
     vehicle_type: { ev: 'Elektrofahrzeug', hybrid: 'Hybrid (Plug-in / Vollhybrid)', combustion: 'Benzin / Diesel' },
   },
   inherit: 'Standard',
@@ -1441,6 +1582,10 @@ const T = {
   new_vehicle: { ev: 'Neues E-Auto', hybrid: 'Neuer Hybrid', combustion: 'Neues Auto' },
   type_short: { ev: 'Elektro', hybrid: 'Hybrid', combustion: 'Benzin / Diesel' },
   editing: 'wird bearbeitet',
+  bar_hidden: 'Bedingung gerade nicht erfüllt – in der Karte ist die Leiste ausgeblendet.',
+  preview_vehicle: 'Vorschau – das Wartungs-Fähnchen wird hier immer gezeigt',
+  state_hint: 'Mehrere Zustände mit Komma trennen, z. B. „connected, ready“. Groß-/Kleinschreibung egal.',
+  now: 'Aktuell',
   combustion_note: 'Bei Benzin/Diesel gibt es kein Laden – Lade-Glow und Start/Stopp sind ausgeblendet. Der Glow leuchtet über die Tank-Warnung.',
 };
 
@@ -1507,6 +1652,7 @@ const EDITOR_CSS = `
   .ed-head .t { font-size:16px; font-weight:600; color: var(--primary-text-color); }
   .pv { padding:14px; margin-bottom:16px; border-radius:14px;
     background: repeating-conic-gradient(rgba(127,127,127,.08) 0% 25%, transparent 0% 50%) 0 0 / 16px 16px, var(--primary-background-color, #f5f5f5); }
+  .pv-note { font-size:12px; color: var(--warning-color, #ffa600); margin-top:8px; }
   .pv-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color: var(--secondary-text-color); margin-bottom:10px; }
   .pv-card { height:auto; border-radius: var(--ha-card-border-radius, 12px);
     border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0)); }
@@ -1894,6 +2040,56 @@ class EvChargeCardEditor extends HTMLElement {
     return d;
   }
 
+  _schemaService() {
+    const style = this._veh().service?.style || SERVICE_DEFAULTS.style;
+    const num = (max) => this._num(0, max, 1, '', 'box');
+    return [
+      this._group('service', 'mdi:wrench-clock', [
+        grid({ name: 'days_entity', selector: { entity: {} } }, { name: 'days_threshold', selector: num(3650) }),
+        grid({ name: 'km_entity', selector: { entity: {} } }, { name: 'km_threshold', selector: num(100000) }),
+        { name: 'style', selector: this._opts('service_style', SERVICE_STYLES) },
+      ], true),
+      this._group('service_look', 'mdi:flag-outline', [
+        { name: 'position', selector: this._opts('service_position', SERVICE_POSITIONS) },
+        grid({ name: 'icon', selector: { icon: {} } }, { name: 'label', selector: { text: {} } }),
+        grid({ name: 'color', selector: { color_rgb: {} } }, { name: 'overdue_color', selector: { color_rgb: {} } }),
+        ...(['flag', 'chip'].includes(style) ? [grid({ name: 'show_label', selector: { boolean: {} } }, { name: 'show_value', selector: { boolean: {} } })] : []),
+        { name: 'size', selector: this._num(8, 24, 1, 'px') },
+        grid(
+          { name: 'offset_x', selector: this._num(-200, 200, 1, 'px', 'box') },
+          { name: 'offset_y', selector: this._num(-200, 200, 1, 'px', 'box') },
+        ),
+        { name: 'pulse', selector: { boolean: {} } },
+      ], has(this._veh().service?.days_entity) || has(this._veh().service?.km_entity)),
+      this._group('service_actions', 'mdi:gesture-tap', [
+        { name: 'tap_action', selector: { ui_action: {} } },
+        { name: 'hold_action', selector: { ui_action: {} } },
+      ]),
+    ];
+  }
+
+  _serviceData() {
+    const d = { ...(this._veh().service || {}) };
+    Object.entries(SERVICE_DEFAULTS).forEach(([k, v]) => { if (!has(d[k])) d[k] = v; });
+    ['color', 'overdue_color'].forEach((k) => { d[k] = toPicker(d[k]) || (isRawColor(d[k]) ? undefined : SERVICE_DEFAULTS[k]); });
+    return d;
+  }
+
+  // Hilfetexte mit aktuellem Zustand der gewählten Entität
+  _dynHelper(ns, name) {
+    const st = (id) => (id ? this._hass?.states?.[id] : null);
+    const fmt = (s) => (s ? `${formatState(this._hass, s)}${isNum(s.state) && s.attributes?.unit_of_measurement && !String(formatState(this._hass, s)).includes(s.attributes.unit_of_measurement) ? ` ${s.attributes.unit_of_measurement}` : ''}` : '');
+    if (ns === 'bar' && name === 'show_state') {
+      const s = st(this._veh().button_bar?.show_entity);
+      return `${s ? `${T.now}: „${s.state}“. ` : ''}${T.state_hint}`;
+    }
+    if (ns === 'service' && (name === 'days_threshold' || name === 'km_threshold')) {
+      const s = st(this._veh().service?.[name === 'days_threshold' ? 'days_entity' : 'km_entity']);
+      return s ? `${T.now}: ${fmt(s)}` : '';
+    }
+    return '';
+  }
+
   _ccData() {
     const d = { ...(this._veh().charge_control || {}) };
     Object.entries(CC_DEFAULTS).forEach(([k, v]) => { if (!has(d[k])) d[k] = v; });
@@ -2004,6 +2200,13 @@ class EvChargeCardEditor extends HTMLElement {
         grid({ name: 'show_names', selector: { boolean: {} } }, { name: 'show_icons', selector: { boolean: {} } }),
         { name: 'hide', selector: { boolean: {} } },
       ], true),
+      this._group('bar_condition', 'mdi:eye-check-outline', [
+        { name: 'show_entity', selector: { entity: {} } },
+        ...(has(this._veh().button_bar?.show_entity) ? [grid(
+          { name: 'show_mode', selector: this._opts('show_mode', ['is', 'is_not']) },
+          { name: 'show_state', selector: { text: {} } },
+        )] : []),
+      ], has(this._veh().button_bar?.show_entity)),
       this._group('bar_colors', 'mdi:palette-outline', [
         grid({ name: 'active_color', selector: { color_rgb: {} } }, { name: 'active_text_color', selector: { color_rgb: {} } }),
         { name: 'background', selector: { color_rgb: {} } },
@@ -2015,6 +2218,7 @@ class EvChargeCardEditor extends HTMLElement {
     const d = { ...(this._veh().button_bar || {}) };
     Object.entries(BAR_DEFAULTS).forEach(([k, v]) => { if (!has(d[k])) d[k] = v; });
     ['active_color', 'active_text_color', 'background'].forEach((k) => { d[k] = toPicker(d[k]); });
+    if (has(d.show_entity) && !has(d.show_mode)) d.show_mode = 'is';
     return d;
   }
 
@@ -2089,7 +2293,7 @@ class EvChargeCardEditor extends HTMLElement {
     const f = document.createElement('ha-form');
     f.hass = this._hass;
     f.computeLabel = (s) => (s.name ? (deepGet(T.fields, `${ns}.${s.name}`) ?? deepGet(T.fields, `root.${s.name}`) ?? s.name) : '');
-    f.computeHelper = (s) => (s.name ? deepGet(T.helpers, `${ns}.${s.name}`) || '' : '');
+    f.computeHelper = (s) => (s.name ? this._dynHelper(ns, s.name) || deepGet(T.helpers, `${ns}.${s.name}`) || '' : '');
     f.addEventListener('value-changed', (ev) => { ev.stopPropagation(); onChange({ ...ev.detail.value }); });
     this._forms.push({ el: f, schemaFn, dataFn });
     return f;
@@ -2142,6 +2346,8 @@ class EvChargeCardEditor extends HTMLElement {
         pane.appendChild(rootForm(() => this._schemaDisplay()));
         break;
       case 'vehicle':
+        this._pv = this._el('div', 'pv');
+        pane.appendChild(this._pv);
         if (this._type() === 'combustion') pane.appendChild(this._el('div', 'muted', esc(T.combustion_note)));
         pane.appendChild(this._makeForm('image', () => this._schemaImage(), () => this._imageData(),
           (v) => this._setVehProp('image', this._cleanSub(v, IMAGE_DEFAULTS, this._veh().image, ['glow_color']))));
@@ -2153,6 +2359,8 @@ class EvChargeCardEditor extends HTMLElement {
           pane.appendChild(this._makeForm('cc', () => this._schemaCC(), () => this._ccData(),
             (v) => this._setVehProp('charge_control', this._cleanSub(v, CC_DEFAULTS, this._veh().charge_control, ['start_color', 'stop_color']))));
         }
+        pane.appendChild(this._makeForm('service', () => this._schemaService(), () => this._serviceData(),
+          (v) => this._setVehProp('service', this._cleanSub(v, SERVICE_DEFAULTS, this._veh().service, ['color', 'overdue_color', 'text_color']))));
         break;
       case 'fields':
         this._list = this._el('div');
@@ -2166,7 +2374,15 @@ class EvChargeCardEditor extends HTMLElement {
         this._pv = this._el('div', 'pv');
         pane.appendChild(this._pv);
         pane.appendChild(this._makeForm('bar', () => this._schemaBar(), () => this._barData(),
-          (v) => this._setVehProp('button_bar', this._cleanSub(v, BAR_DEFAULTS, this._veh().button_bar, ['active_color', 'active_text_color', 'background']))));
+          (v) => {
+            if (!has(v.show_entity)) { delete v.show_state; delete v.show_mode; }
+            else if (!has(v.show_state)) {
+              // Beim Auswählen der Entität den aktuellen Zustand vorschlagen
+              const cur = this._hass.states[v.show_entity]?.state;
+              if (has(cur) && !['unavailable', 'unknown'].includes(cur)) v.show_state = cur;
+            }
+            this._setVehProp('button_bar', this._cleanSub(v, BAR_DEFAULTS, this._veh().button_bar, ['active_color', 'active_text_color', 'background']));
+          }));
         pane.appendChild(this._el('div', 'section-title', esc(T.buttons_title)));
         this._list = this._el('div');
         pane.appendChild(this._list);
@@ -2308,12 +2524,18 @@ class EvChargeCardEditor extends HTMLElement {
     const cfg = this._eff();
     const hass = this._hass;
     let inner = '';
+    let note = '';
+    let label = T.preview;
     if (this._edit?.kind === 'field') {
       inner = `<div class="pv-grid" style="grid-template-columns:1fr">${renderField(this._curField(), this._edit.idx, cfg, hass)}</div>`;
     } else if (this._edit?.kind === 'button') {
       inner = renderBar(cfg, hass, { selected: this._edit.idx, force: true });
     } else if (this._tab === 'buttons') {
       inner = cfg.buttons.length ? renderBar(cfg, hass, { force: true }) : `<div class="muted">${esc(T.no_buttons)}</div>`;
+      if (cfg.buttons.length && !barVisible(cfg, hass)) note = T.bar_hidden;
+    } else if (this._tab === 'vehicle') {
+      label = T.preview_vehicle;
+      inner = renderBody(cfg, hass, { forceService: true });
     } else if (this._tab === 'design') {
       const real = cfg.fields.filter((f) => f && f.entity).slice(0, 2);
       const tiles = real.length
@@ -2327,7 +2549,7 @@ class EvChargeCardEditor extends HTMLElement {
         : renderBar(cfg, hass, { force: true, buttons: SAMPLE_BUTTONS, activeFn: (b, i) => i === 1 });
       inner = `${renderHeader(cfg, hass)}<div class="pv-grid">${tiles.join('')}</div>${bar}`;
     }
-    this._pv.innerHTML = `<div class="pv-label">${esc(T.preview)}</div><div class="evc pv-card" style="${esc(styleString(this._pvProps()))}"><div class="root"><div class="slide">${inner}</div></div></div>`;
+    this._pv.innerHTML = `<div class="pv-label">${esc(label)}</div><div class="evc pv-card" style="${esc(styleString(this._pvProps()))}"><div class="root"><div class="slide">${inner}</div></div></div>${note ? `<div class="pv-note">${esc(note)}</div>` : ''}`;
   }
 
   _rowHtml(icon, color, name, sub, i, n) {
