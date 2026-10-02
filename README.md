@@ -1,7 +1,8 @@
 # EV Charge Card
 
-Lovelace-Karte für Home Assistant zur Anzeige und Steuerung von **E-Auto und Wallbox**:
-Ladestand, Reichweite, Ladeleistung, Fahrzeugbild, Start/Stopp und eine frei konfigurierbare Button-Leiste für den Lademodus.
+Lovelace-Karte für Home Assistant zur Anzeige und Steuerung deiner **Fahrzeuge und Wallbox** – Elektroauto, Hybrid oder Benzin/Diesel:
+Ladestand oder Tank, Reichweite, Ladeleistung, Fahrzeugbild, Start/Stopp und eine frei konfigurierbare Button-Leiste für den Lademodus.
+**Mehrere Fahrzeuge** in einer Karte – umschalten per Wischen oder über die Punkte unten in der Mitte.
 
 Design und Editor folgen demselben System wie die [Abfall-Karte (Trash Card Plus)](https://github.com/Kohle93/Trash-Card-Plus)
 und die [Status-Übersicht-Karte](https://github.com/Kohle93/Status-Summary-Card) – alle drei Karten bedienen sich gleich und passen optisch zusammen.
@@ -12,11 +13,15 @@ und die [Status-Übersicht-Karte](https://github.com/Kohle93/Status-Summary-Card
 
 ## Features
 
+- **Beliebig viele Fahrzeuge** in einer Karte: Wischen oder Punkte antippen schaltet um, die Höhe passt sich dem Fahrzeug an, das zuletzt gewählte Fahrzeug wird gemerkt
+- **Antrieb pro Fahrzeug:** Elektro, Hybrid oder Benzin/Diesel – Laden, Start/Stopp und Glow passen sich automatisch an
+- **Tank-Warnung:** Bei Hybrid und Benzin/Diesel leuchtet der Glow unter dem Auto in einer Warnfarbe, sobald der Tank unter X % fällt
+- Eigene Akzentfarbe pro Fahrzeug möglich
 - Layout: Titel + Werte links, Fahrzeugbild + Werte rechts, Button-Leiste unten (Bild auch links möglich)
 - Sehr schmale Karten brechen automatisch untereinander um (Schwelle einstellbar)
 - **Gemeinsames Design-System:** Hintergrund *Theme / Theme + Farbton / Akzentfarbe / eigene Farbe / transparent* mit Deckkraft, Farbverlauf und Glas-Effekt – für die Karte und für die Werte-Kacheln
 - Symbol-Hintergrund mit Form (Kreis, abgerundet, eckig), Textfarbe mit automatischem Kontrast, Rahmen, Schatten, Eckenradius, Abstände
-- Hervorhebung der Karte **während des Ladens** (Leuchten, Pulsieren, farbiger Rahmen, etwas größer)
+- Hervorhebung der Karte **während des Ladens bzw. bei fast leerem Tank** (Leuchten, Pulsieren, farbiger Rahmen, etwas größer)
 - Hintergrundbild mit Farb-Overlay
 - Beliebig viele Werte mit Einheit, Nachkommastellen, Faktor, Fortschrittsbalken, Farbschwellen und Zustandsübersetzung – jeder Wert kann das Design überschreiben
 - Button-Leiste mit Optionen direkt aus einer `select`- / `input_select`-Entität, plus freie Aktions-Buttons (z. B. Favorit ☆)
@@ -25,25 +30,25 @@ und die [Status-Übersicht-Karte](https://github.com/Kohle93/Status-Summary-Card
 
 ## Visueller Editor
 
-Aufgebaut wie bei der Abfall-Karte und der Status-Übersicht:
+Aufgebaut wie bei der Abfall-Karte und der Status-Übersicht. Über den Tabs wählst du das Fahrzeug, das du bearbeitest (oder legst ein neues an) – die Tabs Allgemein, Fahrzeug, Werte und Buttons gelten für dieses Fahrzeug, Anzeige und Design für die ganze Karte.
 
 | Tab | Inhalt |
 |---|---|
-| **Allgemein** | Titel, Titel-Symbol, Untertitel (Text oder Entität), Aktionen |
-| **Anzeige** | Bild-/Titelposition, Spaltenbreite, Skalierung, Mindesthöhe, Umbruch-Schwelle |
-| **Fahrzeug** | Fahrzeugbild, Lade-Glow, Start/Stopp mit Beschriftung, Farben und eigenen Aktionen |
+| **Allgemein** | Antrieb, Titel, Titel-Symbol, Untertitel, eigene Farbe, Aktionen – darunter die Liste aller Fahrzeuge (sortieren, löschen) und Buttons zum Anlegen (Elektro / Hybrid / Benzin-Diesel) |
+| **Anzeige** | Mehrere Fahrzeuge (Punkte, Wischen, merken), Bild-/Titelposition, Spaltenbreite, Skalierung, Mindesthöhe, Umbruch-Schwelle |
+| **Fahrzeug** | Fahrzeugbild, Lade-Glow, Tank-Warnung, Start/Stopp mit Beschriftung, Farben und eigenen Aktionen (je nach Antrieb) |
 | **Werte** | Liste aller Werte (sortieren, bearbeiten, löschen), Bearbeiten-Seite mit Live-Vorschau, Farbschwellen und Zustandsübersetzung per Klick, Vorschläge aus deinen Fahrzeug-/Wallbox-Geräten |
 | **Buttons** | Button-Leiste, „Alle Optionen übernehmen“, Liste aller Buttons mit Bearbeiten-Seite |
 | **Design** | Akzentfarbe, Karte (Hintergrund, Bild, Rahmen) und Werte (Hintergrund, Symbol, Text, Rahmen), Hervorhebung – mit Live-Vorschau |
 
-Farben werden per Farbpicker gewählt. Konfigurationen der Version 0.x (`layout:` / `style:`) werden automatisch übernommen und beim nächsten Speichern im Editor ins neue Format umgeschrieben.
+Farben werden per Farbpicker gewählt. Ältere Konfigurationen (v0.x mit `layout:` / `style:` und v1.0 mit nur einem Fahrzeug) werden automatisch übernommen und beim nächsten Speichern im Editor ins neue Format mit `vehicles:` umgeschrieben.
 
 ## Installation
 
 ### HACS (benutzerdefiniertes Repository)
 
 1. HACS → ⋮ → **Benutzerdefinierte Repositories**
-2. URL `https://github.com/Kohle93/ev-charge-card`, Typ **Dashboard**
+2. URL `https://github.com/Kohle93/EV-Charge-Card`, Typ **Dashboard**
 3. „EV Charge Card“ installieren, Browser-Cache leeren
 
 ### Manuell
@@ -57,40 +62,71 @@ Farben werden per Farbpicker gewählt. Konfigurationen der Version 0.x (`layout:
 
 Vollständiges Beispiel: [`examples/beispiel.yaml`](examples/beispiel.yaml)
 
+Karten-Einstellungen (Anzeige, Design) stehen oben, alles Fahrzeugbezogene in der Liste `vehicles:`.
+
 ```yaml
 type: custom:ev-charge-card
-title: Mein E-Auto
-title_icon: mdi:car-electric
-accent_color: [156, 204, 60]
-image:
-  url: /local/ev/auto.png
-  max_height: 170
-fields:
-  - entity: sensor.car_battery_level
-    name: Ladestand
-    size: large
-    show_bar: true
-  - entity: sensor.car_range
-    name: Reichweite
-button_bar:
-  entity: select.wallbox_charging_mode
-buttons:
-  - option: Default
-    name: Standard
-    icon: mdi:ev-station
-  - option: Eco
-    icon: mdi:leaf
+accent_color: [3, 169, 244]
+highlight: glow
+vehicles:
+  - vehicle_type: ev
+    title: Mein E-Auto
+    image:
+      url: /local/ev/auto.png
+    fields:
+      - entity: sensor.car_battery_level
+        name: Ladestand
+        size: large
+        show_bar: true
+      - entity: sensor.car_range
+        name: Reichweite
+    button_bar:
+      entity: select.wallbox_charging_mode
+    buttons:
+      - option: Default
+        name: Standard
+        icon: mdi:ev-station
+      - option: Eco
+        icon: mdi:leaf
+  - vehicle_type: combustion
+    title: Zweitwagen
+    title_icon: mdi:car
+    fuel:
+      entity: sensor.zweitwagen_tank
+      threshold: 15
+    fields:
+      - entity: sensor.zweitwagen_tank
+        name: Tank
+        icon: mdi:gas-station
+        show_bar: true
 ```
 
 Farben akzeptieren Farbpicker-Werte `[r, g, b]`, Hex-Codes (`#9ccc3c`) oder HA-Farbnamen (`green`, `amber`, `primary` …).
 
-### Allgemein
+### `vehicles[]` – Fahrzeuge
 
 | Option | Beschreibung |
 |---|---|
+| `vehicle_type` | `ev` (Elektro, Standard) / `hybrid` / `combustion` (Benzin/Diesel) |
 | `title`, `title_icon` | Titel und Symbol |
 | `subtitle` / `subtitle_entity` | Untertitel (Text oder Zustand einer Entität) |
 | `title_tap_action` / `title_hold_action` | Aktionen auf dem Titel |
+| `accent_color` | Optional: eigene Akzentfarbe nur für dieses Fahrzeug |
+| `image`, `charge_control`, `fuel`, `fields`, `button_bar`, `buttons` | siehe unten – alles pro Fahrzeug |
+
+| Antrieb | Laden / Lade-Glow / Start-Stopp | Tank-Warnung |
+|---|---|---|
+| `ev` | ✔ | – |
+| `hybrid` | ✔ | ✔ (Lade-Glow hat Vorrang, solange geladen wird) |
+| `combustion` | – | ✔ |
+
+### Mehrere Fahrzeuge
+
+| Option | Standard | Beschreibung |
+|---|---|---|
+| `show_dots` | `true` | Punkte unten in der Mitte (ab 2 Fahrzeugen) – antippen schaltet um |
+| `swipe` | `true` | Wischen nach links/rechts schaltet um |
+| `remember_vehicle` | `true` | Zuletzt gewähltes Fahrzeug pro Browser merken |
 
 ### Anzeige
 
@@ -134,7 +170,7 @@ Farben akzeptieren Farbpicker-Werte `[r, g, b]`, Hex-Codes (`#9ccc3c`) oder HA-F
 | `border_mode` | `none` | `none` / `accent` / `theme` / `custom` (+ `border_color`, `border_width`) |
 | `shadow` | `none` | `theme` / `none` / `soft` / `strong` |
 | `radius`, `tile_padding` | `12`, `8` | Eckenradius und Innenabstand der Kacheln |
-| `highlight` | `none` | Beim Laden: `none` / `glow` / `pulse` / `border` / `scale` |
+| `highlight` | `none` | Beim Laden bzw. bei fast leerem Tank: `none` / `glow` / `pulse` / `border` / `scale` |
 
 ### `image`
 
@@ -147,7 +183,15 @@ Farben akzeptieren Farbpicker-Werte `[r, g, b]`, Hex-Codes (`#9ccc3c`) oder HA-F
 | `state_images` | *Nur YAML:* Bild je Zustand der `glow_entity` |
 | `tap_action` / `hold_action` | Aktionen |
 
-### `charge_control` – Laden Start / Stopp
+### `fuel` – Tank-Warnung (Hybrid, Benzin/Diesel)
+
+| Option | Standard | Beschreibung |
+|---|---|---|
+| `entity` / `attribute` | – | Tankfüllstand (Zustand oder Attribut) |
+| `threshold` | `15` | Glow leuchtet, sobald der Füllstand ≤ diesem Wert ist (Einheit der Entität, meist %) |
+| `color` | Orange | Farbe von Glow und Hervorhebung bei fast leerem Tank |
+
+### `charge_control` – Laden Start / Stopp (Elektro, Hybrid)
 
 | Option | Beschreibung |
 |---|---|
@@ -197,7 +241,7 @@ Farben akzeptieren Farbpicker-Werte `[r, g, b]`, Hex-Codes (`#9ccc3c`) oder HA-F
 
 ## Bildnachweis
 
-- `images/preview.png` und `examples/auto.png` / `examples/auto.svg` sind eigens für dieses Projekt erstellte, generische Illustrationen und stehen wie der Code unter der MIT-Lizenz.
+- `images/preview.png`, `examples/auto.png` / `examples/auto.svg` und `examples/auto-2.png` / `examples/auto-2.svg` sind eigens für dieses Projekt erstellte, generische Illustrationen und stehen wie der Code unter der MIT-Lizenz.
 - Die Symbole stammen von [Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache 2.0), die Home Assistant mitliefert.
 - Verwende für dein eigenes Dashboard am besten ein Foto deines Autos oder ein Bild, an dem du die Nutzungsrechte hast. Herstellerbilder aus Konfiguratoren oder Pressebereichen sind in der Regel nicht frei weiterverwendbar – bitte nicht ins Repository einchecken.
 

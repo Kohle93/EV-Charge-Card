@@ -1,9 +1,10 @@
 /*!
  * EV Charge Card für Home Assistant
- * https://github.com/Kohle93/ev-charge-card
+ * https://github.com/Kohle93/EV-Charge-Card
  *
- * E-Auto + Wallbox: Ladestand, Reichweite, Fahrzeugbild, Start/Stopp und
- * eine frei konfigurierbare Button-Leiste (select / input_select).
+ * E-Auto, Hybrid oder Verbrenner + Wallbox: Ladestand/Tank, Reichweite,
+ * Fahrzeugbild, Start/Stopp und eine frei konfigurierbare Button-Leiste.
+ * Mehrere Fahrzeuge in einer Karte – per Wischen oder Punkte umschalten.
  *
  * Design & Editor nutzen dasselbe System wie die Abfall-Karte (Trash Card Plus)
  * und die Status-Übersicht-Karte: Tab-Leiste, aufklappbare Gruppen, Live-
@@ -15,7 +16,7 @@
  *   Ressource: /local/ev-charge-card/ev-charge-card.js  (Typ: JavaScript-Modul)
  */
 
-const CARD_VERSION = '1.0.0';
+const CARD_VERSION = '1.1.0';
 const CARD_TYPE = 'ev-charge-card';
 const EDITOR_TYPE = 'ev-charge-card-editor';
 
@@ -154,8 +155,13 @@ const DEFAULTS = {
   shadow: 'none',
   tile_padding: 8,
 
-  // Hervorhebung der ganzen Karte während des Ladens
+  // Hervorhebung der ganzen Karte beim Laden bzw. wenn der Tank fast leer ist
   highlight: 'none',
+
+  // Mehrere Fahrzeuge (Karussell)
+  show_dots: true,
+  swipe: true,
+  remember_vehicle: true,
 };
 
 // Diese Schlüssel können pro Wert (fields[]) überschrieben werden
@@ -168,6 +174,23 @@ const ITEM_STYLE_KEYS = [
 const IMAGE_DEFAULTS = { size: 100, max_height: 180, offset_x: 0, offset_y: 0, flip: false, shadow: true, hide: false };
 const CC_DEFAULTS = { show_names: true, confirm: false, size: 36 };
 const BAR_DEFAULTS = { style: 'segmented', height: 44, show_names: true, show_icons: true, hide: false };
+const FUEL_DEFAULTS = { threshold: 15, color: [255, 152, 0] };
+
+// Diese Schlüssel gehören zu einem Fahrzeug (vehicles[]), alles andere gilt für die ganze Karte
+const VEHICLE_KEYS = [
+  'vehicle_type', 'title', 'title_icon', 'subtitle', 'subtitle_entity', 'title_tap_action', 'title_hold_action',
+  'image', 'charge_control', 'fuel', 'fields', 'button_bar', 'buttons',
+];
+const VEHICLE_TYPES = ['ev', 'hybrid', 'combustion'];
+const TYPE_ICONS = { ev: 'mdi:car-electric', hybrid: 'mdi:car-electric-outline', combustion: 'mdi:car' };
+
+const vehicleType = (v) => (VEHICLE_TYPES.includes(v?.vehicle_type) ? v.vehicle_type : 'ev');
+const vehiclesOf = (cfg) => (Array.isArray(cfg?.vehicles) && cfg.vehicles.length ? cfg.vehicles : [{}]);
+// Wirksame Konfiguration eines Fahrzeugs: Karten-Einstellungen + Fahrzeug (Fahrzeug gewinnt, z. B. eigene accent_color)
+const vehCfg = (cfg, i = 0) => {
+  const v = vehiclesOf(cfg)[i] || {};
+  return { ...cfg, ...v, fields: Array.isArray(v.fields) ? v.fields : [], buttons: Array.isArray(v.buttons) ? v.buttons : [] };
+};
 
 const SHADOWS = {
   none: 'none',
@@ -232,6 +255,15 @@ const migrateConfig = (config) => {
     setIf('value_size', s.value_size);
   }
   delete cfg.style;
+
+  // Ein Fahrzeug (bis v1.0) -> Liste `vehicles:` (ab v1.1 beliebig viele Fahrzeuge)
+  if (!Array.isArray(cfg.vehicles) || !cfg.vehicles.length) {
+    const v = {};
+    VEHICLE_KEYS.forEach((k) => { if (cfg[k] !== undefined) { v[k] = cfg[k]; delete cfg[k]; } });
+    cfg.vehicles = [v];
+  } else {
+    cfg.vehicles = cfg.vehicles.map((v) => (v && typeof v === 'object' ? v : {}));
+  }
   return cfg;
 };
 
@@ -501,13 +533,33 @@ const stateIs = (hass, entity, states, def) => {
   return want.includes(s);
 };
 
-const isCharging = (cfg, hass) => {
+const fuelLevel = (cfg, hass) => {
+  const fu = cfg.fuel || {};
+  if (!fu.entity) return null;
+  const st = hass?.states?.[fu.entity];
+  const raw = fu.attribute ? st?.attributes?.[fu.attribute] : st?.state;
+  return isNum(raw) ? Number(raw) : null;
+};
+
+// Laden (Elektro/Hybrid) und Tank-Warnung (Hybrid/Benzin/Diesel) eines Fahrzeugs
+const glowInfo = (cfg, hass) => {
+  const type = vehicleType(cfg);
   const cc = cfg.charge_control || {};
   const im = cfg.image || {};
-  if (cc.charging_entity) return stateIs(hass, cc.charging_entity, cc.charging_state, ['on', 'charging', 'Charging']);
-  if (im.glow_entity) return stateIs(hass, im.glow_entity, im.glow_state, ['on', 'charging', 'Charging']);
-  return false;
+  let charging = false;
+  if (type !== 'combustion') {
+    if (cc.charging_entity) charging = stateIs(hass, cc.charging_entity, cc.charging_state, ['on', 'charging', 'Charging']);
+    else if (im.glow_entity) charging = stateIs(hass, im.glow_entity, im.glow_state, ['on', 'charging', 'Charging']);
+  }
+  let fuelLow = false;
+  if (type !== 'ev') {
+    const lvl = fuelLevel(cfg, hass);
+    fuelLow = lvl !== null && lvl <= Number(cfg.fuel?.threshold ?? FUEL_DEFAULTS.threshold);
+  }
+  const fuelColor = (colorInfo(cfg.fuel?.color) || colorInfo(FUEL_DEFAULTS.color)).css;
+  return { charging, fuelLow, active: charging || fuelLow, color: !charging && fuelLow ? fuelColor : null, fuelColor };
 };
+const isCharging = (cfg, hass) => glowInfo(cfg, hass).active;
 
 /* ------------------------------------------------------------------ */
 /*  HTML-Bausteine                                                    */
@@ -533,6 +585,7 @@ const renderHeader = (cfg, hass) => {
 
 // Start/Stopp-Buttons unter dem Auto – nur sichtbar, wenn eingesteckt
 const renderChargeControl = (cfg, hass) => {
+  if (vehicleType(cfg) === 'combustion') return '';
   const cc = cfg.charge_control;
   if (!cc || (!cc.start_entity && !cc.stop_entity && !cc.start_action && !cc.stop_action)) return '';
   const im = cfg.image || {};
@@ -567,13 +620,19 @@ const renderImage = (cfg, hass) => {
     const s = hass?.states?.[im.glow_entity]?.state;
     if (s && im.state_images[s]) url = im.state_images[s];
   }
-  const glowing = stateIs(hass, im.glow_entity, im.glow_state, ['on', 'charging']);
+  const type = vehicleType(cfg);
+  const g = glowInfo(cfg, hass);
+  // Lade-Glow (Akzentfarbe) hat Vorrang vor der Tank-Warnung (Warnfarbe)
+  const charging = type !== 'combustion' && stateIs(hass, im.glow_entity, im.glow_state, ['on', 'charging']);
+  const hasGlow = (type !== 'combustion' && im.glow_entity) || (type !== 'ev' && cfg.fuel?.entity);
+  const glowCls = charging ? 'on' : g.fuelLow ? 'on fuel' : '';
+  const glowStyle = !charging && g.fuelLow ? ` style="--evc-glow:${esc(g.fuelColor)}"` : '';
   const clickable = im.tap_action && im.tap_action.action !== 'none';
   return `
     <div class="image-wrap ${clickable ? 'clickable' : ''}" data-act="image">
       <div class="car">
-        ${im.glow_entity ? `<div class="glow ${glowing ? 'on' : ''}"></div>` : ''}
-        ${url ? `<img src="${esc(url)}" alt="" draggable="false">` : '<ha-icon class="placeholder" icon="mdi:car-electric"></ha-icon>'}
+        ${hasGlow ? `<div class="glow ${glowCls}"${glowStyle}></div>` : ''}
+        ${url ? `<img src="${esc(url)}" alt="" draggable="false">` : `<ha-icon class="placeholder" icon="${TYPE_ICONS[type]}"></ha-icon>`}
       </div>
       ${renderChargeControl(cfg, hass)}
     </div>`;
@@ -686,8 +745,21 @@ const CARD_CSS = `
     background: var(--evc-card-bg, ${THEME_BG});
     backdrop-filter: var(--evc-card-bf, none); -webkit-backdrop-filter: var(--evc-card-bf, none); }
 
-  .root { zoom: var(--evc-scale, 1); padding: var(--evc-pad, 16px); display:flex; flex-direction:column;
-    gap: var(--evc-gap, 12px); box-sizing:border-box; min-height: var(--evc-min-h, 0); }
+  .root { zoom: var(--evc-scale, 1); display:flex; flex-direction:column; box-sizing:border-box; min-height: var(--evc-min-h, 0); }
+
+  /* ---------- Fahrzeuge (Karussell) ---------- */
+  .viewport { position:relative; overflow:hidden; touch-action: pan-y; transition: height .3s ease; }
+  .track { display:flex; align-items:flex-start; transition: transform .35s cubic-bezier(.25,.8,.25,1); }
+  .track.dragging { transition:none; }
+  .slide { flex:0 0 100%; min-width:0; box-sizing:border-box; padding: var(--evc-pad, 16px);
+    display:flex; flex-direction:column; gap: var(--evc-gap, 12px); }
+  .dots { display:flex; justify-content:center; align-items:center; gap:2px;
+    margin-top: calc(var(--evc-pad, 16px) * -.55); padding-bottom: calc(var(--evc-pad, 16px) * .45); }
+  .dot { border:none; background:none; padding:6px 3px; margin:0; cursor:pointer; line-height:0; -webkit-tap-highlight-color: transparent; }
+  .dot span { display:block; width:8px; height:8px; border-radius:999px; transition: width .25s ease, background .25s ease;
+    background: color-mix(in srgb, var(--evc-text, var(--primary-text-color)) 28%, transparent); }
+  .dot:hover span { background: color-mix(in srgb, var(--evc-text, var(--primary-text-color)) 50%, transparent); }
+  .dot.active span { width:22px; background: var(--evc-accent); }
   .main { display:flex; gap: var(--evc-gap, 12px); flex:1; }
   .main.img-left { flex-direction: row-reverse; }
   .col-left { flex: 0 0 var(--evc-left-width, 45%); min-width:0; display:flex; flex-direction:column; gap: var(--evc-gap, 12px); }
@@ -777,14 +849,14 @@ const CARD_CSS = `
   .btn ha-icon { --mdc-icon-size:20px; flex:0 0 auto; }
   .btn span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-  /* ---------- Hervorhebung beim Laden – dieselben Effekte wie in den anderen Karten ---------- */
-  .evc.hl-glow { box-shadow: 0 0 0 1.5px var(--evc-accent), 0 0 18px 0 color-mix(in srgb, var(--evc-accent) 55%, transparent) !important; }
-  .evc.hl-border { box-shadow: inset 0 0 0 2px var(--evc-accent), var(--evc-card-shadow, none) !important; }
+  /* ---------- Hervorhebung beim Laden / Tank fast leer – dieselben Effekte wie in den anderen Karten ---------- */
+  .evc.hl-glow { box-shadow: 0 0 0 1.5px var(--evc-hl, var(--evc-accent)), 0 0 18px 0 color-mix(in srgb, var(--evc-hl, var(--evc-accent)) 55%, transparent) !important; }
+  .evc.hl-border { box-shadow: inset 0 0 0 2px var(--evc-hl, var(--evc-accent)), var(--evc-card-shadow, none) !important; }
   .evc.hl-pulse { animation: evc-pulse 2.2s ease-in-out infinite; }
-  .evc.hl-scale { transform: scale(1.02); z-index:1; box-shadow: 0 6px 18px color-mix(in srgb, var(--evc-accent) 40%, transparent) !important; }
+  .evc.hl-scale { transform: scale(1.02); z-index:1; box-shadow: 0 6px 18px color-mix(in srgb, var(--evc-hl, var(--evc-accent)) 40%, transparent) !important; }
   @keyframes evc-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--evc-accent) 60%, transparent), var(--evc-card-shadow, none); }
-    50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--evc-accent) 0%, transparent), var(--evc-card-shadow, none); }
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--evc-hl, var(--evc-accent)) 60%, transparent), var(--evc-card-shadow, none); }
+    50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--evc-hl, var(--evc-accent)) 0%, transparent), var(--evc-card-shadow, none); }
   }
   @media (prefers-reduced-motion: reduce) { .evc.hl-pulse, .glow.on { animation:none; } .glow.on { opacity:.5; } }
 
@@ -801,6 +873,14 @@ const CARD_CSS = `
 /*  Karte                                                             */
 /* ------------------------------------------------------------------ */
 
+// CSS-Variablen eines einzelnen Fahrzeugs (Akzent, Kacheln, Bild …) – ohne die Karten-Hülle
+const SHELL_VARS = ['--evc-card-bg', '--evc-card-bf', '--evc-card-shadow', '--evc-scale', '--evc-min-h'];
+const slideVars = (eff) => {
+  const out = {};
+  Object.entries(cardDesign(eff)).forEach(([k, v]) => { if (k.startsWith('--') && !SHELL_VARS.includes(k)) out[k] = v; });
+  return out;
+};
+
 class EvChargeCard extends HTMLElement {
   static getConfigElement() { return document.createElement(EDITOR_TYPE); }
 
@@ -814,15 +894,18 @@ class EvChargeCard extends HTMLElement {
     const sel = ids.find((id) => /^(input_)?select\./.test(id) && /(wallbox|charg|lade)/i.test(id));
     const opts = sel ? (states[sel].attributes.options || []).slice(0, 4) : [];
     return {
-      title: 'Mein E-Auto',
-      title_icon: 'mdi:car-electric',
-      image: { url: '', max_height: 170 },
-      fields: [
-        soc && { entity: soc, name: 'Ladestand', size: 'large', show_bar: true },
-        range && { entity: range, name: 'Reichweite' },
-      ].filter(Boolean),
-      button_bar: sel ? { entity: sel } : {},
-      buttons: opts.map((o) => ({ option: o })),
+      vehicles: [{
+        vehicle_type: 'ev',
+        title: 'Mein E-Auto',
+        title_icon: TYPE_ICONS.ev,
+        image: { url: '', max_height: 170 },
+        fields: [
+          soc && { entity: soc, name: 'Ladestand', size: 'large', show_bar: true },
+          range && { entity: range, name: 'Reichweite' },
+        ].filter(Boolean),
+        button_bar: sel ? { entity: sel } : {},
+        buttons: opts.map((o) => ({ option: o })),
+      }],
     };
   }
 
@@ -835,14 +918,23 @@ class EvChargeCard extends HTMLElement {
     this._holdTimer = null;
     this._held = false;
     this._states = new Map();
+    this._idx = 0;
+    this._drag = null;
+    this._swiped = false;
   }
 
   setConfig(config) {
     if (!config || typeof config !== 'object') throw new Error('Ungültige Konfiguration');
     const cfg = migrateConfig(config);
-    cfg.fields = Array.isArray(cfg.fields) ? cfg.fields : [];
-    cfg.buttons = Array.isArray(cfg.buttons) ? cfg.buttons : [];
     this._config = cfg;
+    this._vehicles = vehiclesOf(cfg);
+    if (cfg.remember_vehicle !== false) {
+      try {
+        const saved = Number(window.localStorage.getItem(this._storeKey()));
+        if (Number.isInteger(saved)) this._idx = saved;
+      } catch (e) { /* kein localStorage */ }
+    }
+    this._idx = Math.max(0, Math.min(this._idx, this._vehicles.length - 1));
     this._states.clear();
     this._html = '';
     this._styleKey = '';
@@ -859,18 +951,25 @@ class EvChargeCard extends HTMLElement {
   getCardSize() { return 5; }
   getGridOptions() { return { columns: 12, min_columns: 6 }; }
 
+  _storeKey() {
+    return `ev-charge-card:${this._vehicles.map((v) => v.title || v.vehicle_type || '').join('|')}`;
+  }
+
   _entities() {
-    const c = this._config || {};
     const set = new Set();
     const add = (e) => e && set.add(e);
-    add(c.subtitle_entity);
-    add(c.image?.entity);
-    add(c.image?.glow_entity);
-    const cc = c.charge_control || {};
-    [cc.show_entity, cc.start_entity, cc.stop_entity, cc.charging_entity].forEach(add);
-    add(c.button_bar?.entity);
-    c.fields.forEach((f) => add(f?.entity));
-    c.buttons.forEach((b) => add(b?.entity));
+    this._vehicles.forEach((_, i) => {
+      const c = vehCfg(this._config, i);
+      add(c.subtitle_entity);
+      add(c.image?.entity);
+      add(c.image?.glow_entity);
+      add(c.fuel?.entity);
+      const cc = c.charge_control || {};
+      [cc.show_entity, cc.start_entity, cc.stop_entity, cc.charging_entity].forEach(add);
+      add(c.button_bar?.entity);
+      c.fields.forEach((f) => add(f?.entity));
+      c.buttons.forEach((b) => add(b?.entity));
+    });
     return set;
   }
 
@@ -891,16 +990,21 @@ class EvChargeCard extends HTMLElement {
     this.shadowRoot.innerHTML = `<style>${CARD_CSS}</style><ha-card class="evc"><div class="root"></div></ha-card>`;
     this._card = this.shadowRoot.querySelector('ha-card');
     this._root = this.shadowRoot.querySelector('.root');
-    this._root.addEventListener('click', (e) => this._onClick(e));
-    this._root.addEventListener('pointerdown', (e) => this._onDown(e));
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach((t) => this._root.addEventListener(t, () => clearTimeout(this._holdTimer)));
-    this._root.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-act]')) e.preventDefault(); });
+    const r = this._root;
+    r.addEventListener('click', (e) => this._onClick(e));
+    r.addEventListener('pointerdown', (e) => { this._onDown(e); this._swipeStart(e); });
+    r.addEventListener('pointermove', (e) => this._swipeMove(e));
+    r.addEventListener('pointerup', (e) => { clearTimeout(this._holdTimer); this._swipeEnd(e); });
+    r.addEventListener('pointercancel', (e) => { clearTimeout(this._holdTimer); this._swipeEnd(e, true); });
+    r.addEventListener('pointerleave', () => clearTimeout(this._holdTimer));
+    r.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-act]')) e.preventDefault(); });
     this._width = 0;
     this._ro = new ResizeObserver((entries) => {
       this._width = entries[0]?.contentRect?.width || 0;
       this._checkStack();
     });
     this._ro.observe(this._card);
+    this._slideRO = new ResizeObserver(() => this._syncHeight());
   }
 
   // Untereinander-Layout erst unterhalb von stack_below (px, Standard 260, 0 = nie)
@@ -912,14 +1016,17 @@ class EvChargeCard extends HTMLElement {
     this._root.classList.toggle('stacked', limit > 0 && this._width / scale < limit);
   }
 
+  // Karten-Hülle (Hintergrund, Rahmen, Hervorhebung) folgt dem gerade sichtbaren Fahrzeug
   _applyCardStyle() {
-    const cfg = this._config;
-    const hl = cfg.highlight || DEFAULTS.highlight;
-    const charging = hl !== 'none' && isCharging(cfg, this._hass);
-    const key = JSON.stringify([cfg, charging]);
+    const eff = vehCfg(this._config, this._idx);
+    const hl = eff.highlight || DEFAULTS.highlight;
+    const g = glowInfo(eff, this._hass);
+    const on = hl !== 'none' && g.active;
+    const key = JSON.stringify([this._config, this._idx, on, g.color]);
     if (key === this._styleKey) return;
     this._styleKey = key;
-    const props = cardDesign(cfg);
+    const props = cardDesign(eff);
+    if (on && g.color) props['--evc-hl'] = g.color;
     const card = this._card;
     const next = new Set();
     Object.entries(props).forEach(([k, v]) => {
@@ -929,7 +1036,20 @@ class EvChargeCard extends HTMLElement {
     });
     this._applied.forEach((k) => { if (!next.has(k)) card.style.removeProperty(k); });
     this._applied = next;
-    ['glow', 'pulse', 'border', 'scale'].forEach((h) => card.classList.toggle(`hl-${h}`, charging && hl === h));
+    ['glow', 'pulse', 'border', 'scale'].forEach((h) => card.classList.toggle(`hl-${h}`, on && hl === h));
+  }
+
+  _template() {
+    const cfg = this._config;
+    const n = this._vehicles.length;
+    const slides = this._vehicles.map((_, i) => {
+      const eff = vehCfg(cfg, i);
+      return `<div class="slide" data-v="${i}" style="${esc(styleString(slideVars(eff)))}">${renderBody(eff, this._hass)}</div>`;
+    }).join('');
+    const dots = n > 1 && cfg.show_dots !== false
+      ? `<div class="dots" role="tablist">${this._vehicles.map((v, i) => `<button class="dot" type="button" role="tab" data-act="dot:${i}" title="${esc(v.title || `Fahrzeug ${i + 1}`)}" aria-label="${esc(v.title || `Fahrzeug ${i + 1}`)}"><span></span></button>`).join('')}</div>`
+      : '';
+    return `<div class="viewport"><div class="track">${slides}</div></div>${dots}`;
   }
 
   _render() {
@@ -937,16 +1057,101 @@ class EvChargeCard extends HTMLElement {
     this._ensureSkeleton();
     this._applyCardStyle();
     this._checkStack();
-    const html = renderBody(this._config, this._hass);
+    const html = this._template();
     if (html !== this._html) {
       this._root.innerHTML = html;
       this._html = html;
+      this._viewport = this._root.querySelector('.viewport');
+      this._track = this._root.querySelector('.track');
+      this._slideRO.disconnect();
+      this._root.querySelectorAll('.slide').forEach((s) => this._slideRO.observe(s));
+      this._applyIndex(false);
     }
   }
 
+  /* ---------- Fahrzeug wechseln ---------- */
+
+  _applyIndex(animate) {
+    const track = this._track;
+    if (!track) return;
+    if (!animate) track.classList.add('dragging');
+    track.style.transform = `translateX(${-this._idx * 100}%)`;
+    if (!animate) { void track.offsetWidth; track.classList.remove('dragging'); }
+    this._root.querySelectorAll('.slide').forEach((s, i) => s.setAttribute('aria-hidden', String(i !== this._idx)));
+    this._root.querySelectorAll('.dot').forEach((d, i) => {
+      d.classList.toggle('active', i === this._idx);
+      d.setAttribute('aria-selected', String(i === this._idx));
+    });
+    this._syncHeight();
+  }
+
+  // Höhe folgt dem sichtbaren Fahrzeug (unterschiedlich viele Werte je Auto)
+  _syncHeight() {
+    if (!this._viewport) return;
+    if (this._vehicles.length < 2) { this._viewport.style.height = ''; return; }
+    const slide = this._root.querySelectorAll('.slide')[this._idx];
+    if (slide) this._viewport.style.height = `${slide.offsetHeight}px`;
+  }
+
+  _goTo(i) {
+    const n = this._vehicles.length;
+    const next = Math.max(0, Math.min(n - 1, i));
+    const changed = next !== this._idx;
+    this._idx = next;
+    if (changed && this._config.remember_vehicle !== false) {
+      try { window.localStorage.setItem(this._storeKey(), String(next)); } catch (e) { /* egal */ }
+    }
+    this._applyIndex(true);
+    if (changed) {
+      this._applyCardStyle();
+      fireEvent(window, 'haptic', 'light');
+    }
+  }
+
+  _swipeStart(e) {
+    if (this._vehicles.length < 2 || this._config.swipe === false || e.button > 0) return;
+    if (e.target.closest('.dots')) return;
+    this._drag = { x: e.clientX, y: e.clientY, id: e.pointerId, active: false };
+  }
+
+  _swipeMove(e) {
+    const d = this._drag;
+    if (!d || e.pointerId !== d.id) return;
+    const dx = e.clientX - d.x;
+    const dy = e.clientY - d.y;
+    if (!d.active) {
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+        d.active = true;
+        clearTimeout(this._holdTimer);
+        this._track.classList.add('dragging');
+        try { this._root.setPointerCapture(e.pointerId); } catch (err) { /* egal */ }
+      } else if (Math.abs(dy) > 10) {
+        this._drag = null;
+        return;
+      } else return;
+    }
+    const n = this._vehicles.length;
+    const off = (this._idx === 0 && dx > 0) || (this._idx === n - 1 && dx < 0) ? dx / 3 : dx;
+    this._track.style.transform = `translateX(calc(${-this._idx * 100}% + ${off}px))`;
+  }
+
+  _swipeEnd(e, cancel = false) {
+    const d = this._drag;
+    this._drag = null;
+    if (!d || !d.active) return;
+    this._swiped = true;
+    setTimeout(() => { this._swiped = false; }, 350);
+    this._track.classList.remove('dragging');
+    const dx = cancel ? 0 : e.clientX - d.x;
+    const limit = Math.min(60, (this._viewport?.clientWidth || 300) * 0.2);
+    if (dx < -limit) this._goTo(this._idx + 1);
+    else if (dx > limit) this._goTo(this._idx - 1);
+    else this._applyIndex(true);
+  }
+
   /* ---------- Interaktion ---------- */
-  _resolve(act) {
-    const c = this._config;
+  _resolve(act, vi) {
+    const c = vehCfg(this._config, vi);
     const [kind, idx] = act.split(':');
     if (kind === 'field') {
       const f = c.fields[+idx] || {};
@@ -970,18 +1175,25 @@ class EvChargeCard extends HTMLElement {
     }
     if (kind === 'image') {
       const im = c.image || {};
-      return { entity: im.entity || im.glow_entity, tap: im.tap_action, hold: im.hold_action };
+      return { entity: im.entity || im.glow_entity || c.fuel?.entity, tap: im.tap_action, hold: im.hold_action };
     }
     if (kind === 'title') return { entity: c.subtitle_entity, tap: c.title_tap_action, hold: c.title_hold_action };
     return {};
   }
 
-  _onDown(e) {
+  _target(e) {
     const el = e.target.closest('[data-act]');
-    if (!el) return;
+    if (!el) return null;
+    const slide = el.closest('.slide');
+    return { el, vi: slide ? Number(slide.dataset.v) : this._idx };
+  }
+
+  _onDown(e) {
+    const t = this._target(e);
+    if (!t || t.el.dataset.act.startsWith('dot:')) return;
     this._held = false;
     clearTimeout(this._holdTimer);
-    const r = this._resolve(el.dataset.act);
+    const r = this._resolve(t.el.dataset.act, t.vi);
     if (!r.hold || r.hold.action === 'none') return;
     this._holdTimer = setTimeout(() => {
       this._held = true;
@@ -991,10 +1203,12 @@ class EvChargeCard extends HTMLElement {
   }
 
   _onClick(e) {
-    const el = e.target.closest('[data-act]');
-    if (!el || el.disabled) return;
+    if (this._swiped) { this._swiped = false; return; }
+    const t = this._target(e);
+    if (!t || t.el.disabled) return;
+    if (t.el.dataset.act.startsWith('dot:')) { this._goTo(Number(t.el.dataset.act.split(':')[1])); return; }
     if (this._held) { this._held = false; return; }
-    const r = this._resolve(el.dataset.act);
+    const r = this._resolve(t.el.dataset.act, t.vi);
     if (r.tap) this._run(r.tap, r.entity);
   }
 
@@ -1068,16 +1282,17 @@ class EvChargeCard extends HTMLElement {
 const T = {
   tabs: { general: 'Allgemein', display: 'Anzeige', vehicle: 'Fahrzeug', fields: 'Werte', buttons: 'Buttons', design: 'Design' },
   intro: {
-    general: 'Titel und Untertitel der Karte – und was beim Antippen des Titels passiert.',
+    general: 'Deine Fahrzeuge in dieser Karte – und Antrieb, Titel und Untertitel des oben gewählten Fahrzeugs. Bei mehreren Fahrzeugen schaltest du in der Karte per Wischen oder über die Punkte unten um.',
     display: 'Grundlayout der Karte: wo Bild und Titel sitzen, wie breit die Spalten sind und ab welcher Breite die Karte untereinander umbricht. Farben und Transparenz findest du im Tab „Design“.',
-    vehicle: 'Fahrzeugbild, Lade-Glow und die Start-/Stopp-Buttons, die unter dem Auto erscheinen, sobald es eingesteckt ist.',
+    vehicle: 'Fahrzeugbild und Glow: beim Elektroauto leuchtet er beim Laden, bei Hybrid und Benzin/Diesel zusätzlich als Warnung, wenn der Tank fast leer ist. Start/Stopp erscheint unter dem Auto, sobald es eingesteckt ist.',
     fields: 'Jeder Wert (Ladestand, Reichweite, Ladeleistung …) hat sein eigenes Symbol, seine eigene Farbe und optional ein komplett eigenes Design.',
     buttons: 'Die Button-Leiste unten: Optionen direkt aus einer Auswahl-Entität (z. B. Lademodus) oder freie Aktions-Buttons wie Favorit ☆.',
     design: 'Standard-Design für Karte, Werte und Button-Leiste – genau wie bei der Abfall-Karte und der Status-Übersicht. Jeder Wert kann das im Tab „Werte“ individuell überschreiben.',
   },
   groups: {
-    title_actions: 'Aktionen', arrangement: 'Anordnung', size: 'Größe & Umbruch',
-    image: 'Fahrzeugbild', glow: 'Lade-Glow', image_actions: 'Aktionen',
+    title_actions: 'Aktionen', arrangement: 'Anordnung', size: 'Größe & Umbruch', carousel: 'Mehrere Fahrzeuge',
+    vehicle: 'Fahrzeug', vehicle_color: 'Farbe', fuel: 'Tank-Warnung',
+    image: 'Fahrzeugbild', glow: 'Lade-Glow (Laden)', image_actions: 'Aktionen',
     cc: 'Laden Start / Stopp', cc_look: 'Beschriftung & Farben', cc_actions: 'Eigene Aktionen',
     value: 'Entität & Wert', placement: 'Position & Größe', look: 'Symbol & Farbe', progress: 'Fortschrittsbalken',
     item_bg: 'Hintergrund', item_text: 'Text & Rahmen', field_actions: 'Aktionen',
@@ -1086,7 +1301,7 @@ const T = {
     function: 'Funktion', btn_look: 'Aussehen', button_actions: 'Aktionen',
     card_bg: 'Karte – Hintergrund & Transparenz', card_image: 'Karte – Hintergrundbild', card_frame: 'Karte – Rahmen, Form & Abstände',
     bg: 'Werte – Hintergrund & Transparenz', icon: 'Symbol', text: 'Text', frame: 'Werte – Rahmen, Form & Abstände',
-    highlight: 'Hervorhebung beim Laden',
+    highlight: 'Hervorhebung (Laden / Tank fast leer)',
   },
   fields: {
     // Oberste Ebene (Allgemein, Anzeige, Design)
@@ -1113,6 +1328,13 @@ const T = {
       border_mode: 'Rahmen', border_color: 'Rahmenfarbe', border_width: 'Rahmenstärke', shadow: 'Schatten',
       radius: 'Eckenradius', tile_padding: 'Innenabstand der Werte',
       highlight: 'Hervorhebung',
+      show_dots: 'Punkte zum Umschalten anzeigen', swipe: 'Wischen zum Umschalten', remember_vehicle: 'Zuletzt gewähltes Fahrzeug merken',
+    },
+    vehicle: {
+      vehicle_type: 'Antrieb', title: 'Name / Titel', own_accent: 'Eigene Akzentfarbe für dieses Fahrzeug', accent_color: 'Akzentfarbe dieses Fahrzeugs',
+    },
+    fuel: {
+      entity: 'Tankfüllstand (Entität)', attribute: 'Attribut statt Zustand (optional)', threshold: 'Warnen ab Füllstand (höchstens)', color: 'Farbe der Warnung',
     },
     image: {
       url: 'Bild-URL', entity: 'Bild aus Entität (entity_picture)', size: 'Größe', max_height: 'Maximale Höhe',
@@ -1157,7 +1379,16 @@ const T = {
       blur: 'Wirkt, wenn hinter den Werten ein Hintergrundbild oder eine transparente Karte liegt.',
       background_image: 'Bild nach /config/www legen und /local/dateiname.jpg eintragen.',
       accent_color: 'Farbe für Symbole, Balken, Glow und den aktiven Button – solange nichts Eigenes gewählt ist.',
-      highlight: 'Wird nur angezeigt, solange geladen wird (Entität „Lädt gerade“ bzw. Lade-Glow).',
+      highlight: 'Wird angezeigt, solange geladen wird (Entität „Lädt gerade“ bzw. Lade-Glow) – bei Hybrid und Benzin/Diesel auch, wenn der Tank fast leer ist (dann in der Warnfarbe).',
+      show_dots: 'Erscheinen unten in der Mitte, sobald mehr als ein Fahrzeug angelegt ist.',
+      remember_vehicle: 'Merkt sich pro Browser, welches Fahrzeug zuletzt angezeigt wurde.',
+    },
+    vehicle: {
+      vehicle_type: 'Elektro: Laden, Lade-Glow und Start/Stopp. Hybrid: Laden plus Tank-Warnung. Benzin/Diesel: nur Tank-Warnung.',
+      accent_color: 'Überschreibt die Akzentfarbe aus dem Tab „Design“ nur für dieses Fahrzeug.',
+    },
+    fuel: {
+      threshold: 'In der Einheit der Entität, meist %. Sobald der Füllstand darauf oder darunter fällt, leuchtet der Glow unter dem Auto in der Warnfarbe.',
     },
     image: {
       url: 'Am besten ein PNG mit transparentem Hintergrund nach /config/www legen und /local/… eintragen.',
@@ -1190,6 +1421,7 @@ const T = {
     size: { small: 'Klein', normal: 'Normal', large: 'Groß' },
     bar_style: { segmented: 'Segmentiert (Pille)', separate: 'Einzelne Buttons' },
     btn_type: { option: 'Option der Auswahl-Entität', action: 'Freie Aktion (z. B. Favorit ☆)' },
+    vehicle_type: { ev: 'Elektrofahrzeug', hybrid: 'Hybrid (Plug-in / Vollhybrid)', combustion: 'Benzin / Diesel' },
   },
   inherit: 'Standard',
   preview: 'Vorschau', back: 'Zurück', edit_field: 'Wert bearbeiten', edit_button: 'Button bearbeiten',
@@ -1205,6 +1437,11 @@ const T = {
   suggest_title: 'Vorschläge von deinen Fahrzeug- und Wallbox-Geräten', suggest_none: 'Keine weiteren passenden Entitäten gefunden.',
   suggest_add: 'Als Wert hinzufügen', buttons_title: 'Buttons',
   sample_soc: 'Ladestand', sample_range: 'Reichweite', raw_css: 'Eigener CSS-Hintergrund aus YAML aktiv:',
+  vehicles_title: 'Fahrzeuge in dieser Karte', add_vehicle: 'Fahrzeug hinzufügen', vehicle: 'Fahrzeug',
+  new_vehicle: { ev: 'Neues E-Auto', hybrid: 'Neuer Hybrid', combustion: 'Neues Auto' },
+  type_short: { ev: 'Elektro', hybrid: 'Hybrid', combustion: 'Benzin / Diesel' },
+  editing: 'wird bearbeitet',
+  combustion_note: 'Bei Benzin/Diesel gibt es kein Laden – Lade-Glow und Start/Stopp sind ausgeblendet. Der Glow leuchtet über die Tank-Warnung.',
 };
 
 const EDITOR_TABS = [
@@ -1286,6 +1523,18 @@ const EDITOR_CSS = `
   .xp-hint { font-size:12px; color: var(--secondary-text-color); line-height:1.4; margin-bottom:4px; }
   .mini-row { display:flex; align-items:center; gap:4px; }
   .mini-row ha-form { flex:1; min-width:0; }
+
+  /* Fahrzeug-Auswahl über den Tabs */
+  .vbar { display:flex; gap:6px; margin-bottom:10px; overflow-x:auto; padding:1px 1px 3px; }
+  .vchip { flex:0 0 auto; display:flex; align-items:center; gap:6px; padding:5px 12px 5px 5px; border-radius:999px; cursor:pointer;
+    border:1px solid var(--divider-color, rgba(127,127,127,.3)); background: var(--card-background-color, #fff);
+    color: var(--primary-text-color); font: inherit; font-size:13px; font-weight:500; max-width:200px; }
+  .vchip .vi { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; --mdc-icon-size:16px; flex:0 0 auto; }
+  .vchip .vn { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .vchip.active { border-color: var(--primary-color); box-shadow: inset 0 0 0 1px var(--primary-color); color: var(--primary-color); font-weight:600; }
+  .vchip.add { border-style:dashed; border-color: var(--primary-color); color: var(--primary-color); padding:5px 12px; }
+  .vchip.add ha-icon { --mdc-icon-size:18px; }
+  .it-row.sel { border-color: var(--primary-color); box-shadow: inset 0 0 0 1px var(--primary-color); }
 `;
 
 const grid = (...schema) => ({ type: 'grid', name: '', schema });
@@ -1326,6 +1575,7 @@ class EvChargeCardEditor extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this._tab = EDITOR_STATE.tab;
+    this._vi = EDITOR_STATE.vi || 0; // gewähltes Fahrzeug
     this._edit = null; // { kind: 'field' | 'button', idx }
     this._paneKey = null;
     this._forms = [];
@@ -1345,11 +1595,12 @@ class EvChargeCardEditor extends HTMLElement {
 
   setConfig(config) {
     const cfg = migrateConfig(clone(config));
-    cfg.fields = Array.isArray(cfg.fields) ? cfg.fields : [];
-    cfg.buttons = Array.isArray(cfg.buttons) ? cfg.buttons : [];
+    cfg.vehicles = vehiclesOf(cfg);
     this._config = cfg;
+    this._vi = Math.max(0, Math.min(this._vi, cfg.vehicles.length - 1));
     if (this._edit) {
-      const list = this._edit.kind === 'field' ? cfg.fields : cfg.buttons;
+      const eff = this._eff();
+      const list = this._edit.kind === 'field' ? eff.fields : eff.buttons;
       if (!list[this._edit.idx]) this._edit = null;
     }
     this._refresh();
@@ -1396,16 +1647,40 @@ class EvChargeCardEditor extends HTMLElement {
     this.shadowRoot.querySelectorAll('ha-form').forEach((f) => { f.hass = this._hass; });
   }
 
-  _curField() { return (this._edit && this._config.fields[this._edit.idx]) || {}; }
-  _curButton() { return (this._edit && this._config.buttons[this._edit.idx]) || {}; }
+  // Gewähltes Fahrzeug: roh (_veh) und mit Karten-Einstellungen zusammengeführt (_eff)
+  _veh() { return this._config.vehicles[this._vi] || {}; }
+  _eff() { return vehCfg(this._config, this._vi); }
+  _type() { return vehicleType(this._veh()); }
+
+  _curField() { return (this._edit && this._eff().fields[this._edit.idx]) || {}; }
+  _curButton() { return (this._edit && this._eff().buttons[this._edit.idx]) || {}; }
+
+  _setVehicle(v) {
+    const vehicles = [...this._config.vehicles];
+    vehicles[this._vi] = v;
+    this._emit({ ...this._config, vehicles });
+  }
+
+  _setVehProp(key, value) {
+    const v = { ...this._veh() };
+    if (value === undefined || (Array.isArray(value) && !value.length)) delete v[key];
+    else v[key] = value;
+    this._setVehicle(v);
+  }
 
   /* ---------- Schemas: oberste Ebene ---------- */
 
   _schemaGeneral() {
+    const v = this._veh();
     return [
+      { name: 'vehicle_type', selector: this._opts('vehicle_type', VEHICLE_TYPES) },
       { name: 'title', selector: { text: {} } },
       grid({ name: 'title_icon', selector: { icon: {} } }, { name: 'subtitle', selector: { text: {} } }),
       { name: 'subtitle_entity', selector: { entity: {} } },
+      this._group('vehicle_color', 'mdi:palette-outline', [
+        { name: 'own_accent', selector: { boolean: {} } },
+        ...(has(v.accent_color) ? [{ name: 'accent_color', selector: { color_rgb: {} } }] : []),
+      ], has(v.accent_color)),
       this._group('title_actions', 'mdi:gesture-tap', [
         { name: 'title_tap_action', selector: { ui_action: {} } },
         { name: 'title_hold_action', selector: { ui_action: {} } },
@@ -1413,8 +1688,36 @@ class EvChargeCardEditor extends HTMLElement {
     ];
   }
 
+  _vehData() {
+    const d = { ...this._veh() };
+    d.vehicle_type = vehicleType(d);
+    d.own_accent = has(d.accent_color);
+    d.accent_color = toPicker(d.accent_color);
+    return d;
+  }
+
+  _vehChanged(value) {
+    const old = this._veh();
+    const v = {};
+    Object.entries(value).forEach(([k, x]) => { if (has(x)) v[k] = x; });
+    if (v.own_accent) {
+      if (!has(v.accent_color)) v.accent_color = isRawColor(old.accent_color) ? old.accent_color : (toPicker(this._config.accent_color) || [3, 169, 244]);
+    } else delete v.accent_color;
+    delete v.own_accent;
+    // Titel-Symbol folgt dem Antrieb, solange es das Standard-Symbol ist
+    const oldType = vehicleType(old);
+    const newType = vehicleType(v);
+    if (newType !== oldType && (!has(old.title_icon) || old.title_icon === TYPE_ICONS[oldType])) v.title_icon = TYPE_ICONS[newType];
+    this._setVehicle(v);
+  }
+
   _schemaDisplay() {
     return [
+      this._group('carousel', 'mdi:car-multiple', [
+        { name: 'show_dots', selector: { boolean: {} } },
+        { name: 'swipe', selector: { boolean: {} } },
+        { name: 'remember_vehicle', selector: { boolean: {} } },
+      ], this._config.vehicles.length > 1),
       this._group('arrangement', 'mdi:view-split-vertical', [
         grid(
           { name: 'image_position', selector: this._opts('image_position', ['right', 'left']) },
@@ -1531,10 +1834,10 @@ class EvChargeCardEditor extends HTMLElement {
         grid({ name: 'flip', selector: { boolean: {} } }, { name: 'shadow', selector: { boolean: {} } }),
         { name: 'hide', selector: { boolean: {} } },
       ], true),
-      this._group('glow', 'mdi:shimmer', [
+      ...(this._type() !== 'combustion' ? [this._group('glow', 'mdi:shimmer', [
         { name: 'glow_entity', selector: { entity: {} } },
         grid({ name: 'glow_state', selector: { text: {} } }, { name: 'glow_color', selector: { color_rgb: {} } }),
-      ], true),
+      ], true)] : []),
       this._group('image_actions', 'mdi:gesture-tap', [
         { name: 'tap_action', selector: { ui_action: {} } },
         { name: 'hold_action', selector: { ui_action: {} } },
@@ -1543,7 +1846,7 @@ class EvChargeCardEditor extends HTMLElement {
   }
 
   _imageData() {
-    const d = { ...(this._config.image || {}) };
+    const d = { ...(this._veh().image || {}) };
     Object.entries(IMAGE_DEFAULTS).forEach(([k, v]) => { if (!has(d[k])) d[k] = v; });
     d.glow_color = toPicker(d.glow_color);
     return d;
@@ -1571,8 +1874,28 @@ class EvChargeCardEditor extends HTMLElement {
     ];
   }
 
+  _schemaFuel() {
+    return [
+      this._group('fuel', 'mdi:gas-station', [
+        { name: 'entity', selector: { entity: {} } },
+        { name: 'attribute', selector: { attribute: {} }, context: { filter_entity: 'entity' } },
+        grid(
+          { name: 'threshold', selector: this._num(0, 10000, 1, '', 'box') },
+          { name: 'color', selector: { color_rgb: {} } },
+        ),
+      ], true),
+    ];
+  }
+
+  _fuelData() {
+    const d = { ...(this._veh().fuel || {}) };
+    if (!has(d.threshold)) d.threshold = FUEL_DEFAULTS.threshold;
+    d.color = toPicker(d.color) || (isRawColor(d.color) ? undefined : FUEL_DEFAULTS.color);
+    return d;
+  }
+
   _ccData() {
-    const d = { ...(this._config.charge_control || {}) };
+    const d = { ...(this._veh().charge_control || {}) };
     Object.entries(CC_DEFAULTS).forEach(([k, v]) => { if (!has(d[k])) d[k] = v; });
     d.start_color = toPicker(d.start_color);
     d.stop_color = toPicker(d.stop_color);
@@ -1582,7 +1905,7 @@ class EvChargeCardEditor extends HTMLElement {
   /* ---------- Schemas: Werte ---------- */
 
   _schemaFieldA(f) {
-    const eff = (k) => pick(f, this._config, k);
+    const eff = (k) => pick(f, this._eff(), k);
     const set = (k) => has(f[k]) && f[k] !== 'inherit';
     return [
       this._group('value', 'mdi:numeric', [
@@ -1624,7 +1947,7 @@ class EvChargeCardEditor extends HTMLElement {
   }
 
   _schemaFieldB(f) {
-    const eff = (k) => pick(f, this._config, k);
+    const eff = (k) => pick(f, this._eff(), k);
     const set = (k) => has(f[k]) && f[k] !== 'inherit';
     return [
       this._group('item_bg', 'mdi:format-color-fill', [
@@ -1689,7 +2012,7 @@ class EvChargeCardEditor extends HTMLElement {
   }
 
   _barData() {
-    const d = { ...(this._config.button_bar || {}) };
+    const d = { ...(this._veh().button_bar || {}) };
     Object.entries(BAR_DEFAULTS).forEach(([k, v]) => { if (!has(d[k])) d[k] = v; });
     ['active_color', 'active_text_color', 'background'].forEach((k) => { d[k] = toPicker(d[k]); });
     return d;
@@ -1697,7 +2020,7 @@ class EvChargeCardEditor extends HTMLElement {
 
   _schemaButton(b) {
     const type = b.type || 'option';
-    const ent = b.entity || this._config.button_bar?.entity;
+    const ent = b.entity || this._veh().button_bar?.entity;
     const options = (ent && this._hass?.states?.[ent]?.attributes?.options) || [];
     return [
       this._group('function', 'mdi:cog-outline', [
@@ -1734,14 +2057,16 @@ class EvChargeCardEditor extends HTMLElement {
     if (!this._config || !this._hass) return;
     if (!this._built) this._build();
     this._tabsEl.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === this._tab));
-    const key = `${this._tab}:${this._edit ? `${this._edit.kind}-${this._edit.idx}` : ''}`;
+    this._renderVbar();
+    const key = `${this._tab}:${this._vi}:${this._type()}:${this._edit ? `${this._edit.kind}-${this._edit.idx}` : ''}`;
     if (key !== this._paneKey) { this._paneKey = key; this._renderPane(); }
     this._updatePane();
   }
 
   _build() {
     this._built = true;
-    this.shadowRoot.innerHTML = `<style>${CARD_CSS}${EDITOR_CSS}</style><div class="tabs"></div><div class="pane"></div>`;
+    this.shadowRoot.innerHTML = `<style>${CARD_CSS}${EDITOR_CSS}</style><div class="vbar"></div><div class="tabs"></div><div class="pane"></div>`;
+    this._vbarEl = this.shadowRoot.querySelector('.vbar');
     this._tabsEl = this.shadowRoot.querySelector('.tabs');
     this._paneEl = this.shadowRoot.querySelector('.pane');
     EDITOR_TABS.forEach((tab) => {
@@ -1788,7 +2113,7 @@ class EvChargeCardEditor extends HTMLElement {
     const pane = this._paneEl;
     pane.innerHTML = '';
     this._forms = [];
-    this._pv = null; this._list = null; this._found = null; this._addAll = null; this._rawNote = null;
+    this._pv = null; this._list = null; this._found = null; this._addAll = null; this._rawNote = null; this._vlist = null;
     this._thr = null; this._map = null;
 
     if (this._edit?.kind === 'field') { this._renderFieldEditor(pane); return; }
@@ -1799,16 +2124,35 @@ class EvChargeCardEditor extends HTMLElement {
 
     switch (this._tab) {
       case 'general':
-        pane.appendChild(rootForm(() => this._schemaGeneral()));
+        pane.appendChild(this._makeForm('vehicle', () => this._schemaGeneral(), () => this._vehData(), (v) => this._vehChanged(v)));
+        pane.appendChild(this._el('div', 'section-title', esc(T.vehicles_title)));
+        this._vlist = this._el('div');
+        pane.appendChild(this._vlist);
+        {
+          const row = this._el('div', 'add-row');
+          VEHICLE_TYPES.forEach((type) => {
+            const b = this._addBtn(T.type_short[type], () => this._addVehicle(type), true);
+            b.querySelector('ha-icon').setAttribute('icon', TYPE_ICONS[type]);
+            row.appendChild(b);
+          });
+          pane.appendChild(row);
+        }
         break;
       case 'display':
         pane.appendChild(rootForm(() => this._schemaDisplay()));
         break;
       case 'vehicle':
+        if (this._type() === 'combustion') pane.appendChild(this._el('div', 'muted', esc(T.combustion_note)));
         pane.appendChild(this._makeForm('image', () => this._schemaImage(), () => this._imageData(),
-          (v) => this._setSub('image', this._cleanSub(v, IMAGE_DEFAULTS, this._config.image, ['glow_color']))));
-        pane.appendChild(this._makeForm('cc', () => this._schemaCC(), () => this._ccData(),
-          (v) => this._setSub('charge_control', this._cleanSub(v, CC_DEFAULTS, this._config.charge_control, ['start_color', 'stop_color']))));
+          (v) => this._setVehProp('image', this._cleanSub(v, IMAGE_DEFAULTS, this._veh().image, ['glow_color']))));
+        if (this._type() !== 'ev') {
+          pane.appendChild(this._makeForm('fuel', () => this._schemaFuel(), () => this._fuelData(),
+            (v) => this._setVehProp('fuel', this._cleanSub(v, FUEL_DEFAULTS, this._veh().fuel, ['color']))));
+        }
+        if (this._type() !== 'combustion') {
+          pane.appendChild(this._makeForm('cc', () => this._schemaCC(), () => this._ccData(),
+            (v) => this._setVehProp('charge_control', this._cleanSub(v, CC_DEFAULTS, this._veh().charge_control, ['start_color', 'stop_color']))));
+        }
         break;
       case 'fields':
         this._list = this._el('div');
@@ -1822,7 +2166,7 @@ class EvChargeCardEditor extends HTMLElement {
         this._pv = this._el('div', 'pv');
         pane.appendChild(this._pv);
         pane.appendChild(this._makeForm('bar', () => this._schemaBar(), () => this._barData(),
-          (v) => this._setSub('button_bar', this._cleanSub(v, BAR_DEFAULTS, this._config.button_bar, ['active_color', 'active_text_color', 'background']))));
+          (v) => this._setVehProp('button_bar', this._cleanSub(v, BAR_DEFAULTS, this._veh().button_bar, ['active_color', 'active_text_color', 'background']))));
         pane.appendChild(this._el('div', 'section-title', esc(T.buttons_title)));
         this._list = this._el('div');
         pane.appendChild(this._list);
@@ -1935,6 +2279,7 @@ class EvChargeCardEditor extends HTMLElement {
     if (this._list && this._tab === 'fields') this._renderFieldList();
     if (this._list && this._tab === 'buttons') this._renderButtonList();
     if (this._found) this._renderSuggestions();
+    if (this._vlist) this._renderVehicleList();
     if (this._thr) this._renderThresholds();
     if (this._map) this._renderMappings();
     if (this._rawNote) {
@@ -1943,15 +2288,15 @@ class EvChargeCardEditor extends HTMLElement {
       this._rawNote.textContent = has(raw) ? `${T.raw_css} ${raw}` : '';
     }
     if (this._addAll) {
-      const ent = this._config.button_bar?.entity;
+      const ent = this._veh().button_bar?.entity;
       const opts = (ent && this._hass.states[ent]?.attributes?.options) || [];
-      const used = new Set(this._config.buttons.map((b) => b?.option));
+      const used = new Set(this._eff().buttons.map((b) => b?.option));
       this._addAll.style.display = opts.some((o) => !used.has(o)) ? '' : 'none';
     }
   }
 
   _pvProps() {
-    const p = cardDesign(this._config);
+    const p = cardDesign(this._eff());
     delete p.height;
     delete p['--evc-min-h'];
     delete p['--evc-scale'];
@@ -1960,7 +2305,7 @@ class EvChargeCardEditor extends HTMLElement {
 
   _renderPreview() {
     if (!this._pv || !this._config) return;
-    const cfg = this._config;
+    const cfg = this._eff();
     const hass = this._hass;
     let inner = '';
     if (this._edit?.kind === 'field') {
@@ -1982,7 +2327,7 @@ class EvChargeCardEditor extends HTMLElement {
         : renderBar(cfg, hass, { force: true, buttons: SAMPLE_BUTTONS, activeFn: (b, i) => i === 1 });
       inner = `${renderHeader(cfg, hass)}<div class="pv-grid">${tiles.join('')}</div>${bar}`;
     }
-    this._pv.innerHTML = `<div class="pv-label">${esc(T.preview)}</div><div class="evc pv-card" style="${esc(styleString(this._pvProps()))}"><div class="root">${inner}</div></div>`;
+    this._pv.innerHTML = `<div class="pv-label">${esc(T.preview)}</div><div class="evc pv-card" style="${esc(styleString(this._pvProps()))}"><div class="root"><div class="slide">${inner}</div></div></div>`;
   }
 
   _rowHtml(icon, color, name, sub, i, n) {
@@ -2004,7 +2349,7 @@ class EvChargeCardEditor extends HTMLElement {
   }
 
   _renderFieldList() {
-    const cfg = this._config;
+    const cfg = this._eff();
     const hass = this._hass;
     const list = this._list;
     list.innerHTML = '';
@@ -2027,7 +2372,7 @@ class EvChargeCardEditor extends HTMLElement {
   }
 
   _renderButtonList() {
-    const cfg = this._config;
+    const cfg = this._eff();
     const bb = cfg.button_bar || {};
     const list = this._list;
     list.innerHTML = '';
@@ -2055,15 +2400,15 @@ class EvChargeCardEditor extends HTMLElement {
   // Weitere Entitäten der Geräte, die schon in der Karte stecken (Auto, Wallbox)
   _suggestionIds() {
     const hass = this._hass;
-    const cfg = this._config;
+    const cfg = this._eff();
     const cc = cfg.charge_control || {};
     const used = new Set(cfg.fields.map((f) => f?.entity).filter(Boolean));
     const refs = [
       ...cfg.fields.map((f) => f?.entity), cfg.button_bar?.entity, cfg.image?.glow_entity, cfg.subtitle_entity,
-      cc.start_entity, cc.stop_entity, cc.charging_entity, cc.show_entity,
+      cc.start_entity, cc.stop_entity, cc.charging_entity, cc.show_entity, cfg.fuel?.entity,
     ].filter(Boolean);
     const devices = new Set(refs.map((e) => hass.entities?.[e]?.device_id).filter(Boolean));
-    const re = /(vehicle|fahrzeug|\bcar\b|_car_|auto_|ev_|wallbox|charg|lade|range|reichweite|battery_level|soc)/i;
+    const re = /(vehicle|fahrzeug|\bcar\b|_car_|auto_|ev_|wallbox|charg|lade|range|reichweite|battery_level|soc|fuel|tank|kraftstoff|benzin|diesel|odometer|kilometer)/i;
     const byDevice = [];
     const byName = [];
     Object.keys(hass.states).forEach((id) => {
@@ -2133,44 +2478,120 @@ class EvChargeCardEditor extends HTMLElement {
   /* ---------- Listen-Aktionen ---------- */
 
   _listAction(key, action, i) {
-    const list = [...this._config[key]];
-    if (action === 'up' && i > 0) { [list[i - 1], list[i]] = [list[i], list[i - 1]]; this._emit({ ...this._config, [key]: list }); }
-    else if (action === 'down' && i < list.length - 1) { [list[i + 1], list[i]] = [list[i], list[i + 1]]; this._emit({ ...this._config, [key]: list }); }
-    else if (action === 'del') { list.splice(i, 1); this._emit({ ...this._config, [key]: list }); }
+    if (key === 'vehicles') { this._vehicleAction(action, i); return; }
+    const list = [...this._eff()[key]];
+    if (action === 'up' && i > 0) { [list[i - 1], list[i]] = [list[i], list[i - 1]]; this._setVehProp(key, list); }
+    else if (action === 'down' && i < list.length - 1) { [list[i + 1], list[i]] = [list[i], list[i + 1]]; this._setVehProp(key, list); }
+    else if (action === 'del') { list.splice(i, 1); this._setVehProp(key, list); }
     else if (action === 'edit') { this._edit = { kind: key === 'fields' ? 'field' : 'button', idx: i }; this._refresh(); }
   }
 
+  /* ---------- Fahrzeuge ---------- */
+
+  _renderVbar() {
+    const bar = this._vbarEl;
+    if (!bar) return;
+    bar.innerHTML = '';
+    this._config.vehicles.forEach((v, i) => {
+      const type = vehicleType(v);
+      const acc = accentOf(vehCfg(this._config, i)).css;
+      const chip = this._el('button', `vchip${i === this._vi ? ' active' : ''}`,
+        `<span class="vi" style="background:${withAlpha(acc, 20)};color:${acc}"><ha-icon icon="${esc(v.title_icon || TYPE_ICONS[type])}"></ha-icon></span><span class="vn">${esc(v.title || `${T.vehicle} ${i + 1}`)}</span>`);
+      chip.type = 'button';
+      chip.title = this._t(`type_short.${type}`);
+      chip.addEventListener('click', () => this._selectVehicle(i));
+      bar.appendChild(chip);
+    });
+    const add = this._el('button', 'vchip add', `<ha-icon icon="mdi:plus"></ha-icon><span>${esc(T.add_vehicle)}</span>`);
+    add.type = 'button';
+    add.addEventListener('click', () => this._addVehicle('ev'));
+    bar.appendChild(add);
+  }
+
+  _renderVehicleList() {
+    const list = this._vlist;
+    const vehicles = this._config.vehicles;
+    list.innerHTML = '';
+    vehicles.forEach((v, i) => {
+      const type = vehicleType(v);
+      const acc = accentOf(vehCfg(this._config, i)).css;
+      const sub = `${esc(this._t(`type_short.${type}`))}${i === this._vi ? ` · ${esc(T.editing)}` : ''}`;
+      const row = this._el('div', `it-row${i === this._vi ? ' sel' : ''}`,
+        this._rowHtml(v.title_icon || TYPE_ICONS[type], acc, v.title || `${T.vehicle} ${i + 1}`, sub, i, vehicles.length));
+      if (vehicles.length < 2) row.querySelector('[data-a="del"]').setAttribute('disabled', '');
+      this._bindRow(row, 'vehicles', i);
+      list.appendChild(row);
+    });
+  }
+
+  _selectVehicle(i) {
+    this._vi = i;
+    EDITOR_STATE.vi = i;
+    this._edit = null;
+    this._refresh();
+  }
+
+  _addVehicle(type) {
+    const vehicles = [...this._config.vehicles, { vehicle_type: type, title: T.new_vehicle[type], title_icon: TYPE_ICONS[type] }];
+    this._vi = vehicles.length - 1;
+    EDITOR_STATE.vi = this._vi;
+    this._edit = null;
+    this._tab = 'general';
+    EDITOR_STATE.tab = 'general';
+    this._emit({ ...this._config, vehicles });
+  }
+
+  _vehicleAction(action, i) {
+    const list = [...this._config.vehicles];
+    const swap = (a, b) => {
+      [list[a], list[b]] = [list[b], list[a]];
+      if (this._vi === a) this._vi = b; else if (this._vi === b) this._vi = a;
+    };
+    if (action === 'edit') { this._selectVehicle(i); return; }
+    if (action === 'up' && i > 0) swap(i, i - 1);
+    else if (action === 'down' && i < list.length - 1) swap(i, i + 1);
+    else if (action === 'del' && list.length > 1) {
+      list.splice(i, 1);
+      if (this._vi > i || this._vi >= list.length) this._vi = Math.max(0, this._vi - 1);
+      this._edit = null;
+    } else return;
+    EDITOR_STATE.vi = this._vi;
+    this._emit({ ...this._config, vehicles: list });
+  }
+
+  /* ---------- Werte & Buttons hinzufügen ---------- */
+
   _addField(field, openEditor) {
-    const fields = [...this._config.fields, field];
+    const fields = [...this._eff().fields, field];
     if (openEditor) this._edit = { kind: 'field', idx: fields.length - 1 };
-    this._emit({ ...this._config, fields });
+    this._setVehProp('fields', fields);
   }
 
   _addButton() {
-    const ent = this._config.button_bar?.entity;
+    const ent = this._veh().button_bar?.entity;
     const opts = (ent && this._hass.states[ent]?.attributes?.options) || [];
-    const used = new Set(this._config.buttons.map((b) => b?.option));
+    const used = new Set(this._eff().buttons.map((b) => b?.option));
     const next = opts.find((o) => !used.has(o));
-    const buttons = [...this._config.buttons, next ? { option: next, icon: guessOptionIcon(next) } : {}];
+    const buttons = [...this._eff().buttons, next ? { option: next, icon: guessOptionIcon(next) } : {}];
     this._edit = { kind: 'button', idx: buttons.length - 1 };
-    this._emit({ ...this._config, buttons });
+    this._setVehProp('buttons', buttons);
   }
 
   _addAllOptions() {
-    const ent = this._config.button_bar?.entity;
+    const ent = this._veh().button_bar?.entity;
     const opts = (ent && this._hass.states[ent]?.attributes?.options) || [];
-    const used = new Set(this._config.buttons.map((b) => b?.option));
+    const used = new Set(this._eff().buttons.map((b) => b?.option));
     const add = opts.filter((o) => !used.has(o)).map((o) => ({ option: o, icon: guessOptionIcon(o) }));
-    if (add.length) this._emit({ ...this._config, buttons: [...this._config.buttons, ...add] });
+    if (add.length) this._setVehProp('buttons', [...this._eff().buttons, ...add]);
   }
 
   _setFieldProp(key, value) {
     const idx = this._edit.idx;
-    const fields = [...this._config.fields];
+    const fields = [...this._eff().fields];
     const f = { ...(fields[idx] || {}) };
     if (value === undefined) delete f[key]; else f[key] = value;
     fields[idx] = f;
-    this._emit({ ...this._config, fields });
+    this._setVehProp('fields', fields);
   }
 
   _thresholdChanged(i, v) {
@@ -2228,7 +2649,7 @@ class EvChargeCardEditor extends HTMLElement {
 
   _fieldChanged(value) {
     const idx = this._edit.idx;
-    const old = this._config.fields[idx] || {};
+    const old = this._eff().fields[idx] || {};
     const f = {};
     Object.entries(value).forEach(([k, v]) => {
       if (v === undefined || v === null || v === '' || v === 'inherit') return;
@@ -2250,14 +2671,14 @@ class EvChargeCardEditor extends HTMLElement {
     });
     // Farbschwellen & Übersetzungen haben eigene Blöcke
     ['color_thresholds', 'state_map'].forEach((k) => { if (old[k] !== undefined) f[k] = old[k]; else delete f[k]; });
-    const fields = [...this._config.fields];
+    const fields = [...this._eff().fields];
     fields[idx] = f;
-    this._emit({ ...this._config, fields });
+    this._setVehProp('fields', fields);
   }
 
   _buttonChanged(value) {
     const idx = this._edit.idx;
-    const old = this._config.buttons[idx] || {};
+    const old = this._eff().buttons[idx] || {};
     const b = {};
     Object.entries(value).forEach(([k, v]) => { if (has(v)) b[k] = v; });
     if (b.color === undefined && isRawColor(old.color)) b.color = old.color;
@@ -2269,9 +2690,9 @@ class EvChargeCardEditor extends HTMLElement {
     } else {
       delete b.option;
     }
-    const buttons = [...this._config.buttons];
+    const buttons = [...this._eff().buttons];
     buttons[idx] = b;
-    this._emit({ ...this._config, buttons });
+    this._setVehProp('buttons', buttons);
   }
 
   _cleanSub(value, defaults, old = {}, colorKeys = []) {
@@ -2283,12 +2704,6 @@ class EvChargeCardEditor extends HTMLElement {
       if (out[k] !== undefined && JSON.stringify(out[k]) === JSON.stringify(d) && o[k] === undefined) delete out[k];
     });
     return Object.keys(out).length ? out : undefined;
-  }
-
-  _setSub(key, obj) {
-    const cfg = { ...this._config };
-    if (obj === undefined) delete cfg[key]; else cfg[key] = obj;
-    this._emit(cfg);
   }
 
   _emit(value) {
@@ -2319,10 +2734,13 @@ class EvChargeCardEditor extends HTMLElement {
     if (m('text_color_mode') !== 'custom') delete cfg.text_color;
     if (m('border_mode') !== 'custom') delete cfg.border_color;
     if (m('border_mode') === 'none') delete cfg.border_width;
-    if (Array.isArray(cfg.fields) && !cfg.fields.length) delete cfg.fields;
-    if (Array.isArray(cfg.buttons) && !cfg.buttons.length) delete cfg.buttons;
+    cfg.vehicles = vehiclesOf(cfg).map((v) => {
+      const o = { ...v };
+      ['fields', 'buttons'].forEach((k) => { if (Array.isArray(o[k]) && !o[k].length) delete o[k]; });
+      return o;
+    });
 
-    this._config = { ...cfg, fields: cfg.fields || [], buttons: cfg.buttons || [] };
+    this._config = { ...cfg };
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: cfg }, bubbles: true, composed: true }));
     this._refresh();
   }
@@ -2340,9 +2758,9 @@ if (!window.customCards.some((c) => c.type === CARD_TYPE)) {
   window.customCards.push({
     type: CARD_TYPE,
     name: 'EV Charge Card',
-    description: 'E-Auto + Wallbox: Ladestand, Reichweite, Fahrzeugbild, Start/Stopp und Lademodus-Buttons – Design und Editor wie bei der Abfall-Karte und der Status-Übersicht.',
+    description: 'E-Auto, Hybrid oder Verbrenner + Wallbox: Ladestand/Tank, Reichweite, Fahrzeugbild, Start/Stopp und Lademodus-Buttons – mehrere Fahrzeuge per Wischen. Design und Editor wie bei der Abfall-Karte und der Status-Übersicht.',
     preview: true,
-    documentationURL: 'https://github.com/Kohle93/ev-charge-card',
+    documentationURL: 'https://github.com/Kohle93/EV-Charge-Card',
   });
 }
 

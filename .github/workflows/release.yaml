@@ -1,0 +1,18 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: JS-Datei an das Release anhängen
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ev-charge-card.js

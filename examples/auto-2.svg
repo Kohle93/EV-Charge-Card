@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 290" width="620" height="290">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eef1f4"/>
+      <stop offset=".45" stop-color="#b9c2ca"/>
+      <stop offset="1" stop-color="#7c8791"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b4a57"/>
+      <stop offset=".6" stop-color="#1d2630"/>
+      <stop offset="1" stop-color="#0f151b"/>
+    </linearGradient>
+    <radialGradient id="shadow" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#000" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rim" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#e6ebef"/>
+      <stop offset=".7" stop-color="#aab4bd"/>
+      <stop offset="1" stop-color="#6d7780"/>
+    </radialGradient>
+  </defs>
+  <ellipse cx="310" cy="262" rx="270" ry="16" fill="url(#shadow)"/>
+  <!-- Karosserie -->
+  <path d="M62 222 C54 200 54 178 60 166 C66 150 84 128 112 112 C140 100 170 96 210 94 L322 92
+           C346 92 360 100 378 112 L430 146 C470 152 512 160 538 170 C556 177 564 190 562 206 L560 222
+           L511 222 A56 56 0 0 0 399 222 L207 222 A56 56 0 0 0 95 222 Z" fill="url(#body)"/>
+  <!-- Seitliche Lichtkante -->
+  <path d="M70 172 C150 166 330 164 540 178" stroke="#ffffff" stroke-opacity=".55" stroke-width="3" fill="none"/>
+  <!-- Fenster -->
+  <path d="M122 150 C130 132 142 120 162 113 C182 107 206 105 236 104 L318 102 C334 102 344 106 356 114 L404 148 Z" fill="url(#glass)"/>
+  <rect x="262" y="102" width="9" height="48" fill="#99a3ac"/>
+  <path d="M130 146 L160 118" stroke="#fff" stroke-opacity=".12" stroke-width="10" stroke-linecap="round"/>
+  <!-- Türlinien & Griffe -->
+  <path d="M266 152 L266 214 M404 150 C410 175 408 200 400 214" stroke="#6a747d" stroke-width="2" fill="none"/>
+  <rect x="226" y="162" width="26" height="6" rx="3" fill="#6a747d"/>
+  <rect x="352" y="162" width="26" height="6" rx="3" fill="#6a747d"/>
+  <!-- Spiegel -->
+  <path d="M398 142 L414 136 C420 135 424 140 420 146 L404 150 Z" fill="#949ea7"/>
+  <!-- Lichter -->
+  <path d="M520 168 C534 170 548 175 556 183 L540 186 C530 180 522 176 516 174 Z" fill="#f4fbff"/>
+  <path d="M58 170 L72 168 L72 190 L57 192 C55 185 55 177 58 170 Z" fill="#e53935"/>
+  <!-- Tankdeckel -->
+  <circle cx="108" cy="150" r="10" fill="none" stroke="#6a747d" stroke-width="2"/>
+  <!-- Unterer Schweller -->
+  <path d="M207 222 L399 222 L396 230 L210 230 Z" fill="#5a636b"/>
+  <!-- Radhäuser -->
+  <path d="M95 222 A56 56 0 0 1 207 222 Z" fill="#11161a"/>
+  <path d="M399 222 A56 56 0 0 1 511 222 Z" fill="#11161a"/>
+  <!-- Räder -->
+  <g>
+    <circle cx="151" cy="222" r="44" fill="#1b1f23"/>
+    <circle cx="151" cy="222" r="27" fill="url(#rim)"/>
+    <circle cx="151" cy="222" r="7" fill="#5b646c"/>
+    <g stroke="#7b858e" stroke-width="5" stroke-linecap="round">
+      <path d="M151 199 L151 212 M151 232 L151 245 M128 222 L141 222 M161 222 L174 222"/>
+    </g>
+  </g>
+  <g>
+    <circle cx="455" cy="222" r="44" fill="#1b1f23"/>
+    <circle cx="455" cy="222" r="27" fill="url(#rim)"/>
+    <circle cx="455" cy="222" r="7" fill="#5b646c"/>
+    <g stroke="#7b858e" stroke-width="5" stroke-linecap="round">
+      <path d="M455 199 L455 212 M455 232 L455 245 M432 222 L445 222 M465 222 L478 222"/>
+    </g>
+  </g>
+</svg>
