@@ -144,6 +144,11 @@ Farben akzeptieren Farbpicker-Werte `[r, g, b]`, Hex-Codes (`#9ccc3c`) oder HA-F
 
 ### Design – Karte
 
+Einheitlicher Design-Standard mit Trash Card Plus, Power-Flow-Karte und
+Status-Übersicht-Karte: im Editor unter **Design** dieselben Auswahlen, Bezeichnungen,
+Reihenfolge (Akzentfarbe → Karte – Hintergrund & Transparenz → Karte – Rahmen, Form &
+Abstände → Werte …) und YAML-Schlüssel. Design-YAML lässt sich zwischen den Karten kopieren.
+
 | Option | Standard | Beschreibung |
 |---|---|---|
 | `accent_color` | Theme-Primärfarbe | Farbe für Symbole, Balken, Glow und aktiven Button |

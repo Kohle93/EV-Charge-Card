@@ -16,7 +16,7 @@
  *   Ressource: /local/ev-charge-card/ev-charge-card.js  (Typ: JavaScript-Modul)
  */
 
-const CARD_VERSION = '1.2.1';
+const CARD_VERSION = '1.3.0';
 const CARD_TYPE = 'ev-charge-card';
 const EDITOR_TYPE = 'ev-charge-card-editor';
 
@@ -1404,7 +1404,7 @@ const T = {
     vehicle: 'Fahrzeugbild und Glow: beim Elektroauto leuchtet er beim Laden, bei Hybrid und Benzin/Diesel zusätzlich als Warnung, wenn der Tank fast leer ist. Start/Stopp erscheint unter dem Auto, sobald es eingesteckt ist. Unten legst du das Wartungs-Fähnchen fest.',
     fields: 'Jeder Wert (Ladestand, Reichweite, Ladeleistung …) hat sein eigenes Symbol, seine eigene Farbe und optional ein komplett eigenes Design.',
     buttons: 'Die Button-Leiste unten: Optionen direkt aus einer Auswahl-Entität (z. B. Lademodus) oder freie Aktions-Buttons wie Favorit ☆.',
-    design: 'Standard-Design für Karte, Werte und Button-Leiste – genau wie bei der Abfall-Karte und der Status-Übersicht. Jeder Wert kann das im Tab „Werte“ individuell überschreiben.',
+    design: 'Oben die Karte selbst (Hintergrund, Deckkraft, Rahmen – genau wie bei Abfall-Karte, Power-Flow-Karte und Status-Übersicht), darunter das Standard-Design für Werte und Button-Leiste. Jeder Wert kann das im Tab „Werte“ individuell überschreiben.',
   },
   groups: {
     title_actions: 'Aktionen', arrangement: 'Anordnung', size: 'Größe & Umbruch', carousel: 'Mehrere Fahrzeuge',
@@ -1435,8 +1435,8 @@ const T = {
       card_bg_gradient: 'Farbverlauf', card_blur: 'Unschärfe hinter der Karte (Glas-Effekt)',
       background_image: 'Hintergrundbild (URL)', background_size: 'Bildgröße', background_position: 'Bildposition',
       overlay_color: 'Farbe über dem Bild', overlay_opacity: 'Deckkraft über dem Bild',
-      card_border_mode: 'Rahmen', card_border_color: 'Rahmenfarbe', card_border_width: 'Rahmenstärke',
-      card_shadow: 'Schatten', card_radius: 'Eckenradius', padding: 'Innenabstand', gap: 'Abstand zwischen den Elementen',
+      card_border_mode: 'Rahmen der Karte', card_border_color: 'Rahmenfarbe der Karte', card_border_width: 'Rahmenstärke der Karte',
+      card_shadow: 'Schatten der Karte', card_radius: 'Eckenradius der Karte', padding: 'Innenabstand der Karte', gap: 'Abstand zwischen den Elementen',
       bg_mode: 'Hintergrund', bg_color: 'Hintergrundfarbe', bg_opacity: 'Deckkraft / Farbstärke', bg_gradient: 'Farbverlauf',
       blur: 'Unschärfe dahinter (Glas-Effekt)',
       icon_size: 'Symbolgröße', icon_color_mode: 'Symbolfarbe', icon_color: 'Eigene Symbolfarbe',
@@ -1445,7 +1445,7 @@ const T = {
       text_color_mode: 'Textfarbe', text_color: 'Eigene Textfarbe', title_size: 'Schriftgröße Titel',
       label_size: 'Schriftgröße Bezeichnung', value_size: 'Schriftgröße Wert',
       border_mode: 'Rahmen', border_color: 'Rahmenfarbe', border_width: 'Rahmenstärke', shadow: 'Schatten',
-      radius: 'Eckenradius', tile_padding: 'Innenabstand der Werte',
+      radius: 'Eckenradius', tile_padding: 'Innenabstand',
       highlight: 'Hervorhebung',
       show_dots: 'Punkte zum Umschalten anzeigen', swipe: 'Wischen zum Umschalten', remember_vehicle: 'Zuletzt gewähltes Fahrzeug merken',
     },
@@ -1502,7 +1502,8 @@ const T = {
     root: {
       subtitle_entity: 'Überschreibt den Untertitel-Text, z. B. mit dem Wallbox-Status.',
       stack_below: 'Unterhalb dieser Kartenbreite rutscht das Bild unter den Titel. 0 = nie.',
-      card_bg_opacity: 'Bei „Theme + Farbton“ ist das die Stärke des Farbtons.',
+      card_bg_opacity: '0 % = durchsichtig, 100 % = deckend. Bei „Theme + Farbton“ ist das die Stärke des Farbtons.',
+      card_blur: 'Der Hintergrund hinter der Karte wird unscharf durchscheinend – wie Milchglas.',
       bg_opacity: 'Bei „Theme + Farbton“ ist das die Stärke des Farbtons.',
       blur: 'Wirkt, wenn hinter den Werten ein Hintergrundbild oder eine transparente Karte liegt.',
       background_image: 'Bild nach /config/www legen und /local/dateiname.jpg eintragen.',
@@ -1543,6 +1544,7 @@ const T = {
     image_position: { right: 'Rechts', left: 'Links' },
     title_position: { top: 'Oben über die volle Breite', column: 'In der linken Spalte' },
     bg_mode: { theme: 'Karten-Hintergrund (Theme)', tinted: 'Theme + Farbton', accent: 'Volle Akzentfarbe', custom: 'Eigene Farbe', none: 'Transparent (kein Hintergrund)' },
+    card_bg_mode: { theme: 'Theme-Hintergrund', tinted: 'Theme + Farbton', accent: 'Volle Akzentfarbe', custom: 'Eigene Farbe', none: 'Transparent (kein Hintergrund)' },
     card_border_mode: { theme: 'Wie Theme', none: 'Kein Rahmen', accent: 'Akzentfarbe', custom: 'Eigene Farbe' },
     icon_color_mode: { auto: 'Automatisch', accent: 'Akzentfarbe', text: 'Wie Textfarbe', custom: 'Eigene Farbe' },
     icon_bg_mode: { none: 'Keiner', accent: 'Akzentfarbe', theme: 'Karten-Hintergrund', custom: 'Eigene Farbe' },
@@ -1890,12 +1892,21 @@ class EvChargeCardEditor extends HTMLElement {
     return [
       { name: 'accent_color', selector: { color_rgb: {} } },
       this._group('card_bg', 'mdi:card-outline', [
-        { name: 'card_bg_mode', selector: this._opts('bg_mode', ['theme', 'tinted', 'accent', 'custom', 'none']) },
+        { name: 'card_bg_mode', selector: this._opts('card_bg_mode', ['theme', 'tinted', 'accent', 'custom', 'none']) },
         ...(v('card_bg_mode') === 'custom' ? [{ name: 'card_bg_color', selector: { color_rgb: {} } }] : []),
         ...(v('card_bg_mode') !== 'none' ? [{ name: 'card_bg_opacity', selector: this._num(0, 100, 1, '%') }] : []),
         ...(tintable('card_bg_mode') ? [{ name: 'card_bg_gradient', selector: { boolean: {} } }] : []),
         { name: 'card_blur', selector: this._num(0, 30, 1, 'px') },
       ], true),
+      this._group('card_frame', 'mdi:square-rounded-outline', [
+        { name: 'card_border_mode', selector: this._opts('card_border_mode', ['theme', 'none', 'accent', 'custom']) },
+        ...(v('card_border_mode') === 'custom' ? [{ name: 'card_border_color', selector: { color_rgb: {} } }] : []),
+        ...(['accent', 'custom'].includes(v('card_border_mode')) ? [{ name: 'card_border_width', selector: this._num(1, 6, 1, 'px') }] : []),
+        { name: 'card_shadow', selector: this._opts('shadow', ['theme', 'none', 'soft', 'strong']) },
+        { name: 'card_radius', selector: this._num(0, 40, 1, 'px') },
+        { name: 'padding', selector: this._num(0, 40, 1, 'px') },
+        { name: 'gap', selector: this._num(0, 32, 1, 'px') },
+      ]),
       this._group('card_image', 'mdi:image-filter-hdr', [
         { name: 'background_image', selector: { text: {} } },
         ...(hasImg ? [
@@ -1907,15 +1918,6 @@ class EvChargeCardEditor extends HTMLElement {
           { name: 'overlay_opacity', selector: this._num(0, 100, 1, '%') },
         ] : []),
       ]),
-      this._group('card_frame', 'mdi:square-rounded-outline', [
-        { name: 'card_border_mode', selector: this._opts('card_border_mode', ['theme', 'none', 'accent', 'custom']) },
-        ...(v('card_border_mode') === 'custom' ? [{ name: 'card_border_color', selector: { color_rgb: {} } }] : []),
-        ...(['accent', 'custom'].includes(v('card_border_mode')) ? [{ name: 'card_border_width', selector: this._num(1, 6, 1, 'px') }] : []),
-        { name: 'card_shadow', selector: this._opts('shadow', ['theme', 'none', 'soft', 'strong']) },
-        { name: 'card_radius', selector: this._num(0, 40, 1, 'px') },
-        { name: 'padding', selector: this._num(4, 40, 1, 'px') },
-        { name: 'gap', selector: this._num(0, 32, 1, 'px') },
-      ]),
       this._group('bg', 'mdi:format-color-fill', [
         { name: 'bg_mode', selector: this._opts('bg_mode', ['theme', 'tinted', 'accent', 'custom', 'none']) },
         ...(v('bg_mode') === 'custom' ? [{ name: 'bg_color', selector: { color_rgb: {} } }] : []),
@@ -1924,7 +1926,7 @@ class EvChargeCardEditor extends HTMLElement {
         { name: 'blur', selector: this._num(0, 30, 1, 'px') },
       ]),
       this._group('icon', 'mdi:emoticon-outline', [
-        { name: 'icon_size', selector: this._num(12, 48, 1, 'px') },
+        { name: 'icon_size', selector: this._num(12, 80, 1, 'px') },
         grid(
           { name: 'icon_color_mode', selector: this._opts('icon_color_mode', ['auto', 'accent', 'text', 'custom']) },
           { name: 'icon_bg_mode', selector: this._opts('icon_bg_mode', ['none', 'accent', 'theme', 'custom']) },
@@ -1949,7 +1951,7 @@ class EvChargeCardEditor extends HTMLElement {
         ...(v('border_mode') !== 'none' ? [{ name: 'border_width', selector: this._num(1, 6, 1, 'px') }] : []),
         { name: 'shadow', selector: this._opts('shadow', ['theme', 'none', 'soft', 'strong']) },
         { name: 'radius', selector: this._num(0, 40, 1, 'px') },
-        { name: 'tile_padding', selector: this._num(0, 24, 1, 'px') },
+        { name: 'tile_padding', selector: this._num(0, 40, 1, 'px') },
       ]),
       this._group('highlight', 'mdi:star-four-points-outline', [
         { name: 'highlight', selector: this._opts('highlight', ['none', 'glow', 'pulse', 'border', 'scale']) },
