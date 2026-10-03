@@ -1,70 +1,71 @@
 # EV Charge Card
 
-Lovelace-Karte für Home Assistant zur Anzeige und Steuerung deiner **Fahrzeuge und Wallbox** – Elektroauto, Hybrid oder Benzin/Diesel:
-Ladestand oder Tank, Reichweite, Ladeleistung, Fahrzeugbild, Start/Stopp und eine frei konfigurierbare Button-Leiste für den Lademodus.
-**Mehrere Fahrzeuge** in einer Karte – umschalten per Wischen oder über die Punkte unten in der Mitte.
+Lovelace card for Home Assistant that shows and controls your **vehicles and wallbox** – electric, hybrid or petrol/diesel:
+state of charge or fuel level, range, charging power, vehicle image, start/stop and a freely configurable button bar for the charging mode.
+**Multiple vehicles** in one card – switch by swiping or with the dots at the bottom center.
 
-Design und Editor folgen demselben System wie die [Abfall-Karte (Trash Card Plus)](https://github.com/Kohle93/Trash-Card-Plus)
-und die [Status-Übersicht-Karte](https://github.com/Kohle93/Status-Summary-Card) – alle drei Karten bedienen sich gleich und passen optisch zusammen.
+Design and editor follow the same system as [Trash Card Plus](https://github.com/Kohle93/Trash-Card-Plus),
+the [Status Summary Card](https://github.com/Kohle93/Status-Summary-Card) and the [Radial Flow Card](https://github.com/Kohle93/radial-flow-card) – all cards are operated the same way and match visually.
 
-![Vorschau](images/preview.png)
+![Preview](images/preview.png)
 
-<sub>Das Fahrzeug in der Vorschau ist eine eigene, generische Illustration (kein reales Modell) – siehe [Bildnachweis](#bildnachweis).</sub>
+<sub>The vehicle in the preview is a custom, generic illustration (not a real model) – see [Image credits](#image-credits).</sub>
 
 ## Features
 
-- **Beliebig viele Fahrzeuge** in einer Karte: Wischen oder Punkte antippen schaltet um, die Höhe passt sich dem Fahrzeug an, das zuletzt gewählte Fahrzeug wird gemerkt
-- **Antrieb pro Fahrzeug:** Elektro, Hybrid oder Benzin/Diesel – Laden, Start/Stopp und Glow passen sich automatisch an
-- **Tank-Warnung:** Bei Hybrid und Benzin/Diesel leuchtet der Glow unter dem Auto in einer Warnfarbe, sobald der Tank unter X % fällt
-- Eigene Akzentfarbe pro Fahrzeug möglich
-- **Wartungs-Fähnchen:** Entitäten für „Tage bis Wartung“ und „km bis Wartung“ hinterlegen – steht die Wartung in den nächsten X Tagen oder X km an, erscheint ein Fähnchen mit Symbol (Form, Position, Farbe, Text, Größe frei wählbar, rot wenn überfällig)
-- **Button-Leiste mit Bedingung:** nur anzeigen, wenn eine Entität einen bestimmten Zustand meldet (z. B. Wallbox „connected“ oder „ready“)
-- Layout: Titel + Werte links, Fahrzeugbild + Werte rechts, Button-Leiste unten (Bild auch links möglich)
-- Sehr schmale Karten brechen automatisch untereinander um (Schwelle einstellbar)
-- **Gemeinsames Design-System:** Hintergrund *Theme / Theme + Farbton / Akzentfarbe / eigene Farbe / transparent* mit Deckkraft, Farbverlauf und Glas-Effekt – für die Karte und für die Werte-Kacheln
-- Symbol-Hintergrund mit Form (Kreis, abgerundet, eckig), Textfarbe mit automatischem Kontrast, Rahmen, Schatten, Eckenradius, Abstände
-- Hervorhebung der Karte **während des Ladens bzw. bei fast leerem Tank** (Leuchten, Pulsieren, farbiger Rahmen, etwas größer)
-- Hintergrundbild mit Farb-Overlay
-- Beliebig viele Werte mit Einheit, Nachkommastellen, Faktor, Fortschrittsbalken, Farbschwellen und Zustandsübersetzung – jeder Wert kann das Design überschreiben
-- Button-Leiste mit Optionen direkt aus einer `select`- / `input_select`-Entität, plus freie Aktions-Buttons (z. B. Favorit ☆)
-- Start-/Stopp-Buttons unter dem Auto, sobald das Auto eingesteckt ist, und Lade-Glow unter dem Auto
-- Tap- und Hold-Actions (more-info, toggle, navigate, url, perform-action)
+- **Any number of vehicles** in one card: swipe or tap the dots to switch, the height adapts to the vehicle, the last selected vehicle is remembered
+- **Drive type per vehicle:** electric, hybrid or petrol/diesel – charging, start/stop and glow adapt automatically
+- **Low fuel warning:** for hybrid and petrol/diesel the glow under the car lights up in a warning color as soon as the tank drops below X %
+- Optional accent color per vehicle
+- **Service flag:** add entities for "days until service" and "km until service" – if the service is due within X days or X km, a flag with an icon appears (shape, position, color, text and size are configurable, red when overdue)
+- **Button bar with condition:** only show it when an entity reports a certain state (e.g. wallbox "connected" or "ready")
+- Layout: title + values on the left, vehicle image + values on the right, button bar at the bottom (image can also be on the left)
+- Very narrow cards automatically stack vertically (threshold configurable)
+- **Shared design system:** background *theme / theme + tint / accent color / custom color / transparent* with opacity, gradient and glass effect – for the card and for the value tiles
+- Icon background with shape (circle, rounded, square), text color with automatic contrast, border, shadow, corner radius, spacing
+- Highlight of the card **while charging or when the tank is almost empty** (glow, pulse, colored border, slightly larger)
+- Background image with color overlay
+- Any number of values with unit, decimals, factor, progress bar, color thresholds and state translation – every value can override the design
+- Button bar with options taken directly from a `select` / `input_select` entity, plus free action buttons (e.g. favorite ☆)
+- Start/stop buttons under the car as soon as it is plugged in, and a charging glow under the car
+- Tap and hold actions (more-info, toggle, navigate, url, perform-action)
+- Bilingual: editor and card texts in German when Home Assistant runs in German, otherwise in English
 
-## Visueller Editor
+## Visual editor
 
-Aufgebaut wie bei der Abfall-Karte und der Status-Übersicht. Über den Tabs wählst du das Fahrzeug, das du bearbeitest (oder legst ein neues an) – die Tabs Allgemein, Fahrzeug, Werte und Buttons gelten für dieses Fahrzeug, Anzeige und Design für die ganze Karte.
+Built like Trash Card Plus and the Status Summary Card. Above the tabs you choose the vehicle you are editing (or add a new one) – the tabs General, Vehicle, Values and Buttons apply to that vehicle, Display and Design to the whole card.
 
-| Tab | Inhalt |
+| Tab | Content |
 |---|---|
-| **Allgemein** | Antrieb, Titel, Titel-Symbol, Untertitel, eigene Farbe, Aktionen – darunter die Liste aller Fahrzeuge (sortieren, löschen) und Buttons zum Anlegen (Elektro / Hybrid / Benzin-Diesel) |
-| **Anzeige** | Mehrere Fahrzeuge (Punkte, Wischen, merken), Bild-/Titelposition, Spaltenbreite, Skalierung, Mindesthöhe, Umbruch-Schwelle |
-| **Fahrzeug** | Live-Vorschau, Fahrzeugbild, Lade-Glow, Tank-Warnung, Start/Stopp (je nach Antrieb) und Wartungs-Fähnchen |
-| **Werte** | Liste aller Werte (sortieren, bearbeiten, löschen), Bearbeiten-Seite mit Live-Vorschau, Farbschwellen und Zustandsübersetzung per Klick, Vorschläge aus deinen Fahrzeug-/Wallbox-Geräten |
-| **Buttons** | Button-Leiste inkl. Bedingung „Nur anzeigen, wenn …“, „Alle Optionen übernehmen“, Liste aller Buttons mit Bearbeiten-Seite |
-| **Design** | Akzentfarbe, Karte (Hintergrund, Bild, Rahmen) und Werte (Hintergrund, Symbol, Text, Rahmen), Hervorhebung – mit Live-Vorschau |
+| **General** | Drive type, title, title icon, subtitle, own color, actions – below that the list of all vehicles (sort, delete) and buttons to add one (electric / hybrid / petrol-diesel) |
+| **Display** | Multiple vehicles (dots, swipe, remember), image/title position, column width, scaling, minimum height, stacking threshold |
+| **Vehicle** | Live preview, vehicle image, charging glow, low fuel warning, start/stop (depending on drive type) and service flag |
+| **Values** | List of all values (sort, edit, delete), edit page with live preview, color thresholds and state translation with one click, suggestions from your vehicle/wallbox devices |
+| **Buttons** | Button bar including the condition "Only show if …", "Take over all options", list of all buttons with edit page |
+| **Design** | Accent color, card (background, border, image) and values (background, icon, text, border), highlight – with live preview |
 
-Farben werden per Farbpicker gewählt. Ältere Konfigurationen (v0.x mit `layout:` / `style:` und v1.0 mit nur einem Fahrzeug) werden automatisch übernommen und beim nächsten Speichern im Editor ins neue Format mit `vehicles:` umgeschrieben.
+Colors are picked with a color picker. Older configurations (v0.x with `layout:` / `style:` and v1.0 with a single vehicle) are migrated automatically and rewritten to the new `vehicles:` format the next time you save in the editor.
 
 ## Installation
 
-### HACS (benutzerdefiniertes Repository)
+### HACS (custom repository)
 
-1. HACS → ⋮ → **Benutzerdefinierte Repositories**
-2. URL `https://github.com/Kohle93/EV-Charge-Card`, Typ **Dashboard**
-3. „EV Charge Card“ installieren, Browser-Cache leeren
+1. HACS → ⋮ → **Custom repositories**
+2. URL `https://github.com/Kohle93/EV-Charge-Card`, type **Dashboard**
+3. Install "EV Charge Card", clear your browser cache
 
-### Manuell
+### Manual
 
-1. `dist/ev-charge-card.js` nach `/config/www/ev-charge-card/ev-charge-card.js` kopieren
-2. Einstellungen → Dashboards → ⋮ → **Ressourcen** → hinzufügen:
+1. Copy `dist/ev-charge-card.js` to `/config/www/ev-charge-card/ev-charge-card.js`
+2. Settings → Dashboards → ⋮ → **Resources** → add:
    - URL: `/local/ev-charge-card/ev-charge-card.js`
-   - Typ: **JavaScript-Modul**
+   - Type: **JavaScript module**
 
-## Konfiguration
+## Configuration
 
-Vollständiges Beispiel: [`examples/beispiel.yaml`](examples/beispiel.yaml)
+Full example: [`examples/beispiel.yaml`](examples/beispiel.yaml)
 
-Karten-Einstellungen (Anzeige, Design) stehen oben, alles Fahrzeugbezogene in der Liste `vehicles:`.
+Card settings (display, design) are at the top, everything vehicle-related goes into the `vehicles:` list.
 
 ```yaml
 type: custom:ev-charge-card
@@ -72,16 +73,16 @@ accent_color: [3, 169, 244]
 highlight: glow
 vehicles:
   - vehicle_type: ev
-    title: Mein E-Auto
+    title: My EV
     image:
-      url: /local/ev/auto.png
+      url: /local/ev/car.png
     fields:
       - entity: sensor.car_battery_level
-        name: Ladestand
+        name: State of charge
         size: large
         show_bar: true
       - entity: sensor.car_range
-        name: Reichweite
+        name: Range
     button_bar:
       entity: select.wallbox_charging_mode
     buttons:
@@ -91,189 +92,189 @@ vehicles:
       - option: Eco
         icon: mdi:leaf
   - vehicle_type: combustion
-    title: Zweitwagen
+    title: Second car
     title_icon: mdi:car
     fuel:
-      entity: sensor.zweitwagen_tank
+      entity: sensor.second_car_fuel
       threshold: 15
     fields:
-      - entity: sensor.zweitwagen_tank
-        name: Tank
+      - entity: sensor.second_car_fuel
+        name: Fuel
         icon: mdi:gas-station
         show_bar: true
 ```
 
-Farben akzeptieren Farbpicker-Werte `[r, g, b]`, Hex-Codes (`#9ccc3c`) oder HA-Farbnamen (`green`, `amber`, `primary` …).
+Colors accept color picker values `[r, g, b]`, hex codes (`#9ccc3c`) or HA color names (`green`, `amber`, `primary` …).
 
-### `vehicles[]` – Fahrzeuge
+### `vehicles[]` – vehicles
 
-| Option | Beschreibung |
+| Option | Description |
 |---|---|
-| `vehicle_type` | `ev` (Elektro, Standard) / `hybrid` / `combustion` (Benzin/Diesel) |
-| `title`, `title_icon` | Titel und Symbol |
-| `subtitle` / `subtitle_entity` | Untertitel (Text oder Zustand einer Entität) |
-| `title_tap_action` / `title_hold_action` | Aktionen auf dem Titel |
-| `accent_color` | Optional: eigene Akzentfarbe nur für dieses Fahrzeug |
-| `image`, `charge_control`, `fuel`, `service`, `fields`, `button_bar`, `buttons` | siehe unten – alles pro Fahrzeug |
+| `vehicle_type` | `ev` (electric, default) / `hybrid` / `combustion` (petrol/diesel) |
+| `title`, `title_icon` | Title and icon |
+| `subtitle` / `subtitle_entity` | Subtitle (text or the state of an entity) |
+| `title_tap_action` / `title_hold_action` | Actions on the title |
+| `accent_color` | Optional: own accent color for this vehicle only |
+| `image`, `charge_control`, `fuel`, `service`, `fields`, `button_bar`, `buttons` | see below – all per vehicle |
 
-| Antrieb | Laden / Lade-Glow / Start-Stopp | Tank-Warnung |
+| Drive type | Charging / charging glow / start-stop | Low fuel warning |
 |---|---|---|
 | `ev` | ✔ | – |
-| `hybrid` | ✔ | ✔ (Lade-Glow hat Vorrang, solange geladen wird) |
+| `hybrid` | ✔ | ✔ (the charging glow takes priority while charging) |
 | `combustion` | – | ✔ |
 
-### Mehrere Fahrzeuge
+### Multiple vehicles
 
-| Option | Standard | Beschreibung |
+| Option | Default | Description |
 |---|---|---|
-| `show_dots` | `true` | Punkte unten in der Mitte (ab 2 Fahrzeugen) – antippen schaltet um |
-| `swipe` | `true` | Wischen nach links/rechts schaltet um |
-| `remember_vehicle` | `true` | Zuletzt gewähltes Fahrzeug pro Browser merken |
+| `show_dots` | `true` | Dots at the bottom center (from 2 vehicles) – tap to switch |
+| `swipe` | `true` | Swipe left/right to switch |
+| `remember_vehicle` | `true` | Remember the last selected vehicle per browser |
 
-### Anzeige
+### Display
 
-| Option | Standard | Beschreibung |
+| Option | Default | Description |
 |---|---|---|
 | `image_position` | `right` | `right` / `left` |
-| `title_position` | `top` | `top` (volle Breite) / `column` (linke Spalte) |
-| `left_width` | `45` | Breite linke Spalte in % |
-| `right_columns` | `1` | Spalten der Werte unter dem Bild |
-| `scale` | `1` | Skalierung der ganzen Karte (0.5 – 2) |
-| `min_height` / `card_height` | – | Mindesthöhe / feste Höhe in px |
-| `stack_below` | `260` | Unterhalb dieser Kartenbreite (px) rutscht das Bild unter den Titel, `0` = nie |
+| `title_position` | `top` | `top` (full width) / `column` (left column) |
+| `left_width` | `45` | Width of the left column in % |
+| `right_columns` | `1` | Columns of the values below the image |
+| `scale` | `1` | Scaling of the whole card (0.5 – 2) |
+| `min_height` / `card_height` | – | Minimum height / fixed height in px |
+| `stack_below` | `260` | Below this card width (px) the image moves under the title, `0` = never |
 
-### Design – Karte
+### Design – card
 
-Einheitlicher Design-Standard mit Trash Card Plus, Power-Flow-Karte und
-Status-Übersicht-Karte: im Editor unter **Design** dieselben Auswahlen, Bezeichnungen,
-Reihenfolge (Akzentfarbe → Karte – Hintergrund & Transparenz → Karte – Rahmen, Form &
-Abstände → Werte …) und YAML-Schlüssel. Design-YAML lässt sich zwischen den Karten kopieren.
+Shared design standard with Trash Card Plus, Radial Flow Card and Status Summary Card:
+the **Design** tab of the editor has the same options, names, order (accent color →
+card – background & transparency → card – border, shape & spacing → values …) and YAML keys.
+Design YAML can be copied between the cards.
 
-| Option | Standard | Beschreibung |
+| Option | Default | Description |
 |---|---|---|
-| `accent_color` | Theme-Primärfarbe | Farbe für Symbole, Balken, Glow und aktiven Button |
-| `card_bg_mode` | `theme` | `theme` / `tinted` (Theme + Farbton) / `accent` / `custom` / `none` |
-| `card_bg_color`, `card_bg_opacity`, `card_bg_gradient` | –, `100`, `false` | Farbe, Deckkraft in %, Farbverlauf |
-| `card_blur` | `0` | Glas-Effekt (px) |
-| `background_image`, `background_size`, `background_position` | –, `cover`, `center` | Hintergrundbild |
-| `overlay_color`, `overlay_opacity` | –, `40` | Farbe über dem Bild |
+| `accent_color` | theme primary color | Color for icons, bars, glow and the active button |
+| `card_bg_mode` | `theme` | `theme` / `tinted` (theme + tint) / `accent` / `custom` / `none` |
+| `card_bg_color`, `card_bg_opacity`, `card_bg_gradient` | –, `100`, `false` | Color, opacity in %, gradient |
+| `card_blur` | `0` | Glass effect (px) |
+| `background_image`, `background_size`, `background_position` | –, `cover`, `center` | Background image |
+| `overlay_color`, `overlay_opacity` | –, `40` | Color on top of the image |
 | `card_border_mode` | `theme` | `theme` / `none` / `accent` / `custom` (+ `card_border_color`, `card_border_width`) |
 | `card_shadow` | `theme` | `theme` / `none` / `soft` / `strong` |
-| `card_radius`, `padding`, `gap` | Theme, `16`, `12` | Eckenradius, Innenabstand, Abstand in px |
-| `card_background` | – | *Nur YAML:* beliebiger CSS-Hintergrund (z. B. `linear-gradient(…)`), überschreibt `card_bg_*` |
+| `card_radius`, `padding`, `gap` | theme, `16`, `12` | Corner radius, padding, gap in px |
+| `card_background` | – | *YAML only:* any CSS background (e.g. `linear-gradient(…)`), overrides `card_bg_*` |
 
-### Design – Werte (Standard für alle, pro Wert überschreibbar)
+### Design – values (default for all, can be overridden per value)
 
-| Option | Standard | Beschreibung |
+| Option | Default | Description |
 |---|---|---|
 | `bg_mode` | `tinted` | `theme` / `tinted` / `accent` / `custom` / `none` |
-| `bg_color`, `bg_opacity`, `bg_gradient`, `blur` | –, `10`, `false`, `0` | Hintergrund der Kacheln |
-| `icon_size` | `20` | Symbolgröße in px |
+| `bg_color`, `bg_opacity`, `bg_gradient`, `blur` | –, `10`, `false`, `0` | Background of the tiles |
+| `icon_size` | `20` | Icon size in px |
 | `icon_color_mode` | `auto` | `auto` / `accent` / `text` / `custom` (+ `icon_color`) |
 | `icon_bg_mode` | `accent` | `none` / `accent` / `theme` / `custom` (+ `icon_bg_color`, `icon_bg_opacity`) |
 | `icon_shape` | `circle` | `circle` / `rounded` / `square` |
-| `text_color_mode` | `auto` | `auto` (guter Kontrast) / `theme` / `custom` (+ `text_color`) |
-| `title_size`, `label_size`, `value_size` | `20`, `12`, `18` | Schriftgrößen in px |
+| `text_color_mode` | `auto` | `auto` (good contrast) / `theme` / `custom` (+ `text_color`) |
+| `title_size`, `label_size`, `value_size` | `20`, `12`, `18` | Font sizes in px |
 | `border_mode` | `none` | `none` / `accent` / `theme` / `custom` (+ `border_color`, `border_width`) |
 | `shadow` | `none` | `theme` / `none` / `soft` / `strong` |
-| `radius`, `tile_padding` | `12`, `8` | Eckenradius und Innenabstand der Kacheln |
-| `highlight` | `none` | Beim Laden bzw. bei fast leerem Tank: `none` / `glow` / `pulse` / `border` / `scale` |
+| `radius`, `tile_padding` | `12`, `8` | Corner radius and padding of the tiles |
+| `highlight` | `none` | While charging or when the tank is almost empty: `none` / `glow` / `pulse` / `border` / `scale` |
 
 ### `image`
 
-| Option | Beschreibung |
+| Option | Description |
 |---|---|
-| `url` / `entity` | Bild-URL (z. B. `/local/ev/auto.png`) oder `entity_picture` einer Entität. Eine frei nutzbare Beispielgrafik liegt unter [`examples/auto.png`](examples/auto.png) |
-| `size`, `max_height` | Breite in %, max. Höhe in px |
-| `offset_x` / `offset_y`, `flip`, `shadow`, `hide` | Versatz, spiegeln, Schlagschatten (`false` = aus), ausblenden |
-| `glow_entity` / `glow_state` / `glow_color` | Leuchten unter dem Auto bei bestimmtem Zustand |
-| `state_images` | *Nur YAML:* Bild je Zustand der `glow_entity` |
-| `tap_action` / `hold_action` | Aktionen |
+| `url` / `entity` | Image URL (e.g. `/local/ev/car.png`) or the `entity_picture` of an entity. A freely usable sample graphic is available at [`examples/auto.png`](examples/auto.png) |
+| `size`, `max_height` | Width in %, max. height in px |
+| `offset_x` / `offset_y`, `flip`, `shadow`, `hide` | Offset, mirror, drop shadow (`false` = off), hide |
+| `glow_entity` / `glow_state` / `glow_color` | Glow under the car for a certain state |
+| `state_images` | *YAML only:* image per state of the `glow_entity` |
+| `tap_action` / `hold_action` | Actions |
 
-### `fuel` – Tank-Warnung (Hybrid, Benzin/Diesel)
+### `fuel` – low fuel warning (hybrid, petrol/diesel)
 
-| Option | Standard | Beschreibung |
+| Option | Default | Description |
 |---|---|---|
-| `entity` / `attribute` | – | Tankfüllstand (Zustand oder Attribut) |
-| `threshold` | `15` | Glow leuchtet, sobald der Füllstand ≤ diesem Wert ist (Einheit der Entität, meist %) |
-| `color` | Orange | Farbe von Glow und Hervorhebung bei fast leerem Tank |
+| `entity` / `attribute` | – | Fuel level (state or attribute) |
+| `threshold` | `15` | The glow lights up as soon as the level is ≤ this value (unit of the entity, usually %) |
+| `color` | orange | Color of the glow and highlight when the tank is almost empty |
 
-### `service` – Wartungs-Fähnchen (alle Antriebe)
+### `service` – service flag (all drive types)
 
-Das Fähnchen erscheint, sobald **eine** der beiden Bedingungen erfüllt ist. Ist ein Wert ≤ 0, gilt die Wartung als überfällig (Farbe `overdue_color`, Text „überfällig“).
+The flag appears as soon as **one** of the two conditions is met. If a value is ≤ 0, the service counts as overdue (color `overdue_color`, text "overdue").
 
-| Option | Standard | Beschreibung |
+| Option | Default | Description |
 |---|---|---|
-| `days_entity` / `days_threshold` | – / `30` | Entität „Tage bis Wartung“ – Fähnchen ab ≤ X Tagen |
-| `km_entity` / `km_threshold` | – / `1000` | Entität „km bis Wartung“ – Fähnchen ab ≤ X km |
-| `style` | `flag` | `flag` (Fähnchen mit Text) / `icon` (Symbol im Kreis) / `symbol` (nur Symbol, ohne Hintergrund) / `chip` (abgerundet mit Text) |
-| `position` | `top-right` | `top-right` / `top-left` / `bottom-right` / `bottom-left` / `image` (am Fahrzeugbild) / `title` (neben dem Titel) |
-| `icon`, `label` | `mdi:wrench-clock`, `Wartung` | Symbol und Text |
-| `color`, `overdue_color` | Orange, Rot | Farbe normal / überfällig |
-| `text_color` | automatisch | *Nur YAML:* eigene Textfarbe |
-| `show_label`, `show_value` | `true` | Text bzw. Rest-Tage / Rest-km anzeigen |
-| `size` | `12` | Schriftgröße in px (Symbol wächst mit) |
-| `offset_x`, `offset_y` | `0` | Feinjustierung der Position in px |
-| `pulse` | `false` | Pulsieren, solange die Wartung ansteht |
-| `tap_action`, `hold_action` | more-info | Aktionen (Standard: Details der Tage-Entität) |
+| `days_entity` / `days_threshold` | – / `30` | Entity "days until service" – flag from ≤ X days |
+| `km_entity` / `km_threshold` | – / `1000` | Entity "km until service" – flag from ≤ X km |
+| `style` | `flag` | `flag` (flag with text) / `icon` (icon in a circle) / `symbol` (icon only, no background) / `chip` (rounded with text) |
+| `position` | `top-right` | `top-right` / `top-left` / `bottom-right` / `bottom-left` / `image` (at the vehicle image) / `title` (next to the title) |
+| `icon`, `label` | `mdi:wrench-clock`, `Wartung` | Icon and text |
+| `color`, `overdue_color` | orange, red | Color normal / overdue |
+| `text_color` | automatic | *YAML only:* custom text color |
+| `show_label`, `show_value` | `true` | Show the text or the remaining days / km |
+| `size` | `12` | Font size in px (the icon scales along) |
+| `offset_x`, `offset_y` | `0` | Fine-tuning of the position in px |
+| `pulse` | `false` | Pulse while the service is due |
+| `tap_action`, `hold_action` | more-info | Actions (default: details of the days entity) |
 
-### `charge_control` – Laden Start / Stopp (Elektro, Hybrid)
+### `charge_control` – charging start / stop (electric, hybrid)
 
-| Option | Beschreibung |
+| Option | Description |
 |---|---|
-| `start_entity` / `stop_entity` | `button`/`input_button` → press, `script`/`scene` → turn_on, `switch`/`input_boolean` → Start = an, Stopp = aus |
-| `show_entity` / `show_state` | Sichtbar, wenn die Entität diesen Zustand hat. Leer = Lade-Glow verwenden |
-| `charging_entity` / `charging_state` | Lädt gerade – füllt Start/Stopp und steuert die Hervorhebung |
-| `start_name`, `stop_name`, `start_icon`, `stop_icon`, `start_color`, `stop_color` | Beschriftung und Farben |
-| `show_names`, `size`, `confirm` | Beschriftung anzeigen, Größe (px), vorher nachfragen |
-| `start_action` / `stop_action` | Eigene Aktion statt Entität |
+| `start_entity` / `stop_entity` | `button`/`input_button` → press, `script`/`scene` → turn_on, `switch`/`input_boolean` → start = on, stop = off |
+| `show_entity` / `show_state` | Visible when the entity has this state. Empty = use the charging glow |
+| `charging_entity` / `charging_state` | Currently charging – fills start/stop and controls the highlight |
+| `start_name`, `stop_name`, `start_icon`, `stop_icon`, `start_color`, `stop_color` | Labels and colors |
+| `show_names`, `size`, `confirm` | Show labels, size (px), ask for confirmation first |
+| `start_action` / `stop_action` | Custom action instead of an entity |
 
-### `fields[]` – Werte
+### `fields[]` – values
 
-| Option | Beschreibung |
+| Option | Description |
 |---|---|
-| `entity`, `attribute` | Entität (Pflicht), optional Attribut statt Zustand |
-| `name`, `icon`, `color` | Bezeichnung, Symbol, Farbe des Werts |
+| `entity`, `attribute` | Entity (required), optionally an attribute instead of the state |
+| `name`, `icon`, `color` | Label, icon, color of the value |
 | `slot`, `size` | `left` / `right`, `small` / `normal` / `large` |
-| `unit`, `decimals`, `multiply` | Einheit, Nachkommastellen, Faktor |
-| `show_name`, `show_icon` | ein-/ausblenden |
-| `show_bar`, `bar_min`, `bar_max` | Fortschrittsbalken |
-| `color_thresholds` | Liste `{from, color}` – färbt Symbol, Balken und Kachel |
-| `state_map` | Zustände übersetzen, z. B. `Charging: Lädt` |
-| Design-Schlüssel | `bg_mode`, `bg_color`, `bg_opacity`, `bg_gradient`, `icon_color_mode`, `icon_color`, `icon_bg_mode`, `icon_bg_color`, `icon_bg_opacity`, `icon_shape`, `text_color_mode`, `text_color`, `border_mode`, `border_color`, `border_width`, `shadow` |
-| `tap_action`, `hold_action` | Standard-Tap: more-info |
+| `unit`, `decimals`, `multiply` | Unit, decimals, factor |
+| `show_name`, `show_icon` | Show/hide |
+| `show_bar`, `bar_min`, `bar_max` | Progress bar |
+| `color_thresholds` | List of `{from, color}` – colors the icon, bar and tile |
+| `state_map` | Translate raw states into your own text, e.g. `charging: Charging` |
+| Design keys | `bg_mode`, `bg_color`, `bg_opacity`, `bg_gradient`, `icon_color_mode`, `icon_color`, `icon_bg_mode`, `icon_bg_color`, `icon_bg_opacity`, `icon_shape`, `text_color_mode`, `text_color`, `border_mode`, `border_color`, `border_width`, `shadow` |
+| `tap_action`, `hold_action` | Default tap: more-info |
 
 ### `button_bar`
 
-| Option | Standard | Beschreibung |
+| Option | Default | Description |
 |---|---|---|
-| `entity` | – | `select.*` oder `input_select.*` |
+| `entity` | – | `select.*` or `input_select.*` |
 | `style` | `segmented` | `segmented` / `separate` |
 | `show_names`, `show_icons` | `true` | |
-| `height` | `44` | Höhe in px |
-| `active_color`, `active_text_color`, `background` | Akzent / Kontrast / wie Kacheln | Farben |
-| `hide` | `false` | Leiste ausblenden |
-| `show_entity` | – | Leiste nur anzeigen, wenn diese Entität … |
-| `show_state` | `on` | … einen dieser Zustände hat (kommagetrennt, Groß-/Kleinschreibung egal), z. B. `connected, ready` |
-| `show_mode` | `is` | `is` = Zustand muss passen, `is_not` = Zustand darf nicht passen |
+| `height` | `44` | Height in px |
+| `active_color`, `active_text_color`, `background` | accent / contrast / like the tiles | Colors |
+| `hide` | `false` | Hide the bar |
+| `show_entity` | – | Only show the bar when this entity … |
+| `show_state` | `on` | … has one of these states (comma-separated, case-insensitive), e.g. `connected, ready` |
+| `show_mode` | `is` | `is` = state must match, `is_not` = state must not match |
 
 ### `buttons[]`
 
-| Option | Beschreibung |
+| Option | Description |
 |---|---|
-| `type` | `option` (Standard) oder `action` |
-| `option` | Option der Auswahl-Entität |
-| `entity` | Überschreibt die Leisten-Entität bzw. Entität für `action` |
-| `active_state` | Aktiv, wenn die Entität diesen Zustand hat (Standard `on`) |
-| `name`, `icon`, `color`, `width` | Aussehen (`width` = Flex-Faktor) |
-| `tap_action`, `hold_action` | Aktionen (`action`-Buttons ohne Tap-Action: toggle) |
+| `type` | `option` (default) or `action` |
+| `option` | Option of the select entity |
+| `entity` | Overrides the bar entity or the entity for `action` |
+| `active_state` | Active when the entity has this state (default `on`) |
+| `name`, `icon`, `color`, `width` | Appearance (`width` = flex factor) |
+| `tap_action`, `hold_action` | Actions (`action` buttons without a tap action: toggle) |
 
-## Bildnachweis
+## Image credits
 
-- `images/preview.png`, `examples/auto.png` / `examples/auto.svg` und `examples/auto-2.png` / `examples/auto-2.svg` sind eigens für dieses Projekt erstellte, generische Illustrationen und stehen wie der Code unter der MIT-Lizenz.
-- Die Symbole stammen von [Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache 2.0), die Home Assistant mitliefert.
-- Verwende für dein eigenes Dashboard am besten ein Foto deines Autos oder ein Bild, an dem du die Nutzungsrechte hast. Herstellerbilder aus Konfiguratoren oder Pressebereichen sind in der Regel nicht frei weiterverwendbar – bitte nicht ins Repository einchecken.
+- `images/preview.png`, `examples/auto.png` / `examples/auto.svg` and `examples/auto-2.png` / `examples/auto-2.svg` are generic illustrations created specifically for this project and are licensed under the MIT license like the code.
+- The icons come from [Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache 2.0), which ship with Home Assistant.
+- For your own dashboard, ideally use a photo of your own car or an image you have the rights to use. Manufacturer images from configurators or press areas are usually not free to reuse – please don't commit them to the repository.
 
-## Lizenz
+## License
 
 MIT

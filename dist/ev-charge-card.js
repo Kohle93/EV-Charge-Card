@@ -16,7 +16,7 @@
  *   Ressource: /local/ev-charge-card/ev-charge-card.js  (Typ: JavaScript-Modul)
  */
 
-const CARD_VERSION = '1.3.0';
+const CARD_VERSION = '1.4.0';
 const CARD_TYPE = 'ev-charge-card';
 const EDITOR_TYPE = 'ev-charge-card-editor';
 
@@ -177,7 +177,8 @@ const BAR_DEFAULTS = { style: 'segmented', height: 44, show_names: true, show_ic
 const FUEL_DEFAULTS = { threshold: 15, color: [255, 152, 0] };
 const SERVICE_DEFAULTS = {
   days_threshold: 30, km_threshold: 1000, style: 'flag', position: 'top-right', icon: 'mdi:wrench-clock',
-  label: 'Wartung', color: [255, 152, 0], overdue_color: [244, 67, 54], show_label: true, show_value: true,
+  // label: Text kommt aus T.card.service_label (Sprache), solange nichts Eigenes eingetragen ist
+  label: undefined, color: [255, 152, 0], overdue_color: [244, 67, 54], show_label: true, show_value: true,
   size: 12, offset_x: 0, offset_y: 0, pulse: false,
 };
 // flag = Fähnchen mit Text, icon = Symbol im Kreis, symbol = nur Symbol, chip = abgerundet mit Text
@@ -603,11 +604,11 @@ const serviceText = (cfg, hass, info, all = false) => {
   const parts = [];
   const nf = new Intl.NumberFormat(localeOf(hass), { maximumFractionDigits: 0 });
   if (info.days !== null && (all || info.daysDue)) {
-    parts.push(info.days <= 0 ? 'überfällig' : `${nf.format(info.days)} ${Math.round(info.days) === 1 ? 'Tag' : 'Tage'}`);
+    parts.push(info.days <= 0 ? T.card.overdue : `${nf.format(info.days)} ${Math.round(info.days) === 1 ? T.card.day : T.card.days}`);
   }
   if (info.km !== null && (all || info.kmDue)) {
     const unit = hass?.states?.[sv.km_entity]?.attributes?.unit_of_measurement || 'km';
-    parts.push(info.km <= 0 ? (parts.includes('überfällig') ? '' : 'überfällig') : `${nf.format(info.km)} ${unit}`);
+    parts.push(info.km <= 0 ? (parts.includes(T.card.overdue) ? '' : T.card.overdue) : `${nf.format(info.km)} ${unit}`);
   }
   return parts.filter(Boolean).join(' · ');
 };
@@ -617,7 +618,7 @@ const renderService = (cfg, hass, where, force = false) => {
   const sv = cfg.service || {};
   const info = serviceInfo(cfg, hass);
   if (!info || (!info.due && !force)) return '';
-  const d = (k) => (has(sv[k]) ? sv[k] : SERVICE_DEFAULTS[k]);
+  const d = (k) => (has(sv[k]) ? sv[k] : k === 'label' ? T.card.service_label : SERVICE_DEFAULTS[k]);
   let pos = SERVICE_POSITIONS.includes(d('position')) ? d('position') : 'top-right';
   if (pos === 'title' && !cfg.title && !cfg.title_icon && !cfg.subtitle && !cfg.subtitle_entity) pos = 'top-right';
   if (pos === 'image' && cfg.image?.hide) pos = 'top-right';
@@ -678,7 +679,7 @@ const renderChargeControl = (cfg, hass) => {
     if (!ent && !cc[`${kind}_action`]) return '';
     const st = ent ? hass?.states?.[ent] : null;
     const disabled = ent && (!st || st.state === 'unavailable');
-    const name = cc[`${kind}_name`] ?? (kind === 'start' ? 'Start' : 'Stopp');
+    const name = cc[`${kind}_name`] ?? (kind === 'start' ? T.card.start : T.card.stop);
     const icon = cc[`${kind}_icon`] || (kind === 'start' ? 'mdi:play' : 'mdi:stop');
     const active = charging === null ? false : kind === 'start' ? charging : !charging;
     return `
@@ -995,6 +996,7 @@ class EvChargeCard extends HTMLElement {
   static getConfigElement() { return document.createElement(EDITOR_TYPE); }
 
   static getStubConfig(hass) {
+    setLang(hass);
     const states = hass?.states || {};
     const ids = Object.keys(states);
     const dc = (id) => states[id]?.attributes?.device_class;
@@ -1006,12 +1008,12 @@ class EvChargeCard extends HTMLElement {
     return {
       vehicles: [{
         vehicle_type: 'ev',
-        title: 'Mein E-Auto',
+        title: T.card.stub_title,
         title_icon: TYPE_ICONS.ev,
         image: { url: '', max_height: 170 },
         fields: [
-          soc && { entity: soc, name: 'Ladestand', size: 'large', show_bar: true },
-          range && { entity: range, name: 'Reichweite' },
+          soc && { entity: soc, name: T.sample_soc, size: 'large', show_bar: true },
+          range && { entity: range, name: T.sample_range },
         ].filter(Boolean),
         button_bar: sel ? { entity: sel } : {},
         buttons: opts.map((o) => ({ option: o })),
@@ -1034,7 +1036,7 @@ class EvChargeCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config || typeof config !== 'object') throw new Error('Ungültige Konfiguration');
+    if (!config || typeof config !== 'object') throw new Error(T.card.invalid_config);
     const cfg = migrateConfig(config);
     this._config = cfg;
     this._vehicles = vehiclesOf(cfg);
@@ -1054,6 +1056,16 @@ class EvChargeCard extends HTMLElement {
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
+    // Sprache gewechselt (auch wenn eine andere Karte/der Editor T schon umgestellt hat): alles neu aufbauen
+    if (setLang(hass) || (this._lang && this._lang !== T_LANG)) {
+      this._lang = T_LANG;
+      this._html = '';
+      this._styleKey = '';
+      if (this._config) this._relevantChanged();
+      this._render();
+      return;
+    }
+    this._lang = T_LANG;
     if (first || this._relevantChanged()) this._render();
   }
   get hass() { return this._hass; }
@@ -1160,7 +1172,7 @@ class EvChargeCard extends HTMLElement {
       return `<div class="slide" data-v="${i}" style="${esc(styleString(slideVars(eff)))}">${renderBody(eff, this._hass)}</div>`;
     }).join('');
     const dots = n > 1 && cfg.show_dots !== false
-      ? `<div class="dots" role="tablist">${this._vehicles.map((v, i) => `<button class="dot" type="button" role="tab" data-act="dot:${i}" title="${esc(v.title || `Fahrzeug ${i + 1}`)}" aria-label="${esc(v.title || `Fahrzeug ${i + 1}`)}"><span></span></button>`).join('')}</div>`
+      ? `<div class="dots" role="tablist">${this._vehicles.map((v, i) => `<button class="dot" type="button" role="tab" data-act="dot:${i}" title="${esc(v.title || `${T.vehicle} ${i + 1}`)}" aria-label="${esc(v.title || `${T.vehicle} ${i + 1}`)}"><span></span></button>`).join('')}</div>`
       : '';
     return `<div class="viewport"><div class="track">${slides}</div></div>${dots}`;
   }
@@ -1283,7 +1295,7 @@ class EvChargeCard extends HTMLElement {
       const ent = cc[`${idx}_entity`];
       const custom = cc[`${idx}_action`];
       const tap = custom && custom.action ? { ...custom } : { action: '__press', kind: idx };
-      if (cc.confirm && !tap.confirmation) tap.confirmation = { text: idx === 'start' ? 'Ladevorgang starten?' : 'Ladevorgang stoppen?' };
+      if (cc.confirm && !tap.confirmation) tap.confirmation = { text: idx === 'start' ? T.card.confirm_start : T.card.confirm_stop };
       return { entity: ent, tap, hold: { action: 'more-info' } };
     }
     if (kind === 'image') {
@@ -1332,7 +1344,7 @@ class EvChargeCard extends HTMLElement {
   _run(a, entityId) {
     if (!a || !this._hass) return;
     if (a.confirmation) {
-      const text = typeof a.confirmation === 'object' && a.confirmation.text ? a.confirmation.text : 'Bist du sicher?';
+      const text = typeof a.confirmation === 'object' && a.confirmation.text ? a.confirmation.text : T.card.confirm;
       if (!window.confirm(text)) return;
     }
     const hass = this._hass;
@@ -1396,7 +1408,7 @@ class EvChargeCard extends HTMLElement {
 /*  bare Gruppen mit Symbol, Listen mit Bearbeiten-Seite, Vorschau).    */
 /* ------------------------------------------------------------------ */
 
-const T = {
+const T_DE = {
   tabs: { general: 'Allgemein', display: 'Anzeige', vehicle: 'Fahrzeug', fields: 'Werte', buttons: 'Buttons', design: 'Design' },
   intro: {
     general: 'Deine Fahrzeuge in dieser Karte – und Antrieb, Titel und Untertitel des oben gewählten Fahrzeugs. Bei mehreren Fahrzeugen schaltest du in der Karte per Wischen oder über die Punkte unten um.',
@@ -1589,7 +1601,224 @@ const T = {
   state_hint: 'Mehrere Zustände mit Komma trennen, z. B. „connected, ready“. Groß-/Kleinschreibung egal.',
   now: 'Aktuell',
   combustion_note: 'Bei Benzin/Diesel gibt es kein Laden – Lade-Glow und Start/Stopp sind ausgeblendet. Der Glow leuchtet über die Tank-Warnung.',
+  // Texte in der Karte selbst (außerhalb des Editors)
+  card: {
+    service_label: 'Wartung', overdue: 'überfällig', day: 'Tag', days: 'Tage',
+    start: 'Start', stop: 'Stopp', confirm_start: 'Ladevorgang starten?', confirm_stop: 'Ladevorgang stoppen?',
+    confirm: 'Bist du sicher?', invalid_config: 'Ungültige Konfiguration', stub_title: 'Mein E-Auto',
+  },
 };
+
+const T_EN = {
+  tabs: { general: 'General', display: 'Display', vehicle: 'Vehicle', fields: 'Values', buttons: 'Buttons', design: 'Design' },
+  intro: {
+    general: 'Your vehicles in this card – plus drive type, title and subtitle of the vehicle selected above. With several vehicles you switch between them in the card by swiping or with the dots below.',
+    display: 'Basic layout of the card: where image and title sit, how wide the columns are and below which width the card stacks vertically. Colors and transparency are in the “Design” tab.',
+    vehicle: 'Vehicle image and glow: for an EV it lights up while charging; for hybrids and petrol/diesel cars it also warns when the tank is almost empty. Start/stop appears below the car as soon as it is plugged in. At the bottom you set up the service flag.',
+    fields: 'Each value (state of charge, range, charging power …) has its own icon, its own color and optionally a completely individual design.',
+    buttons: 'The button bar at the bottom: options taken straight from a select entity (e.g. charging mode) or free action buttons such as Favorite ☆.',
+    design: 'At the top the card itself (background, opacity, border – same as Trash Card Plus, Radial Flow Card and Status Summary Card), below the default design for values and button bar. Each value can override it in the “Values” tab.',
+  },
+  groups: {
+    title_actions: 'Actions', arrangement: 'Arrangement', size: 'Size & stacking', carousel: 'Multiple vehicles',
+    vehicle: 'Vehicle', vehicle_color: 'Color', fuel: 'Low fuel warning',
+    service: 'Service', service_look: 'Service – look & position', service_actions: 'Service – actions',
+    bar_condition: 'Only show if …',
+    image: 'Vehicle image', glow: 'Charging glow', image_actions: 'Actions',
+    cc: 'Charging start / stop', cc_look: 'Labels & colors', cc_actions: 'Custom actions',
+    value: 'Entity & value', placement: 'Position & size', look: 'Icon & color', progress: 'Progress bar',
+    item_bg: 'Background', item_text: 'Text & border', field_actions: 'Actions',
+    thresholds: 'Color thresholds', state_map: 'Translate states',
+    bar: 'Button bar', bar_colors: 'Colors',
+    function: 'Function', btn_look: 'Appearance', button_actions: 'Actions',
+    card_bg: 'Card – background & transparency', card_image: 'Card – background image', card_frame: 'Card – border, shape & spacing',
+    bg: 'Values – background & transparency', icon: 'Icon', text: 'Text', frame: 'Values – border, shape & spacing',
+    highlight: 'Highlight (charging / low fuel)',
+  },
+  fields: {
+    root: {
+      title: 'Title', title_icon: 'Title icon', subtitle: 'Subtitle (text)', subtitle_entity: 'Subtitle from entity',
+      title_tap_action: 'Tap action', title_hold_action: 'Hold action',
+      image_position: 'Vehicle image', title_position: 'Title', left_width: 'Width of the left column',
+      right_columns: 'Value columns below the image', scale: 'Scale of the whole card', min_height: 'Minimum height',
+      card_height: 'Fixed height', stack_below: 'Stack vertically below card width',
+      accent_color: 'Accent color',
+      card_bg_mode: 'Card background', card_bg_color: 'Card color', card_bg_opacity: 'Card opacity',
+      card_bg_gradient: 'Gradient', card_blur: 'Blur behind card (glass effect)',
+      background_image: 'Background image (URL)', background_size: 'Image size', background_position: 'Image position',
+      overlay_color: 'Color over the image', overlay_opacity: 'Opacity over the image',
+      card_border_mode: 'Card border', card_border_color: 'Card border color', card_border_width: 'Card border width',
+      card_shadow: 'Card shadow', card_radius: 'Card corner radius', padding: 'Card padding', gap: 'Gap between elements',
+      bg_mode: 'Background', bg_color: 'Background color', bg_opacity: 'Opacity / tint strength', bg_gradient: 'Gradient',
+      blur: 'Blur behind (glass effect)',
+      icon_size: 'Icon size', icon_color_mode: 'Icon color', icon_color: 'Custom icon color',
+      icon_bg_mode: 'Icon background', icon_bg_color: 'Custom icon background color', icon_bg_opacity: 'Icon background opacity',
+      icon_shape: 'Icon background shape',
+      text_color_mode: 'Text color', text_color: 'Custom text color', title_size: 'Title font size',
+      label_size: 'Label font size', value_size: 'Value font size',
+      border_mode: 'Border', border_color: 'Border color', border_width: 'Border width', shadow: 'Shadow',
+      radius: 'Corner radius', tile_padding: 'Padding',
+      highlight: 'Highlight',
+      show_dots: 'Show dots for switching', swipe: 'Swipe to switch', remember_vehicle: 'Remember last selected vehicle',
+    },
+    vehicle: {
+      vehicle_type: 'Drive type', title: 'Name / title', own_accent: 'Own accent color for this vehicle', accent_color: 'Accent color of this vehicle',
+    },
+    service: {
+      days_entity: 'Days until service (entity)', days_threshold: 'Show from (days)',
+      km_entity: 'Distance until service (entity)', km_threshold: 'Show from (km)',
+      style: 'Shape', position: 'Position', icon: 'Icon', label: 'Text',
+      color: 'Color', overdue_color: 'Color when overdue', show_label: 'Show text', show_value: 'Show remaining days / km',
+      size: 'Size', offset_x: 'Horizontal offset', offset_y: 'Vertical offset', pulse: 'Pulse',
+      tap_action: 'Tap action', hold_action: 'Hold action',
+    },
+    fuel: {
+      entity: 'Fuel level (entity)', attribute: 'Attribute instead of state (optional)', threshold: 'Warn at level (or below)', color: 'Warning color',
+    },
+    image: {
+      url: 'Image URL', entity: 'Image from entity (entity_picture)', size: 'Size', max_height: 'Maximum height',
+      offset_x: 'Horizontal offset', offset_y: 'Vertical offset', flip: 'Mirror', shadow: 'Drop shadow', hide: 'Hide image',
+      glow_entity: 'Entity', glow_state: 'Glows at state', glow_color: 'Color',
+      tap_action: 'Tap action', hold_action: 'Hold action',
+    },
+    cc: {
+      start_entity: 'Start entity', stop_entity: 'Stop entity', show_entity: 'Show if entity …', show_state: '… has this state',
+      charging_entity: 'Charging: entity', charging_state: 'Charging: state', show_names: 'Show labels', confirm: 'Ask for confirmation',
+      start_name: 'Start name', stop_name: 'Stop name', start_icon: 'Start icon', stop_icon: 'Stop icon',
+      start_color: 'Start color', stop_color: 'Stop color', size: 'Button size',
+      start_action: 'Custom start action', stop_action: 'Custom stop action',
+    },
+    field: {
+      entity: 'Entity', attribute: 'Attribute instead of state (optional)', name: 'Label', unit: 'Unit (override)',
+      decimals: 'Decimal places', multiply: 'Factor', slot: 'Position', size: 'Size', show_name: 'Show label', show_icon: 'Show icon',
+      color: 'Value color', icon: 'Icon', show_bar: 'Show progress bar', bar_min: 'Bar from', bar_max: 'Bar to',
+      icon_color_mode: 'Icon color', icon_color: 'Custom icon color', icon_bg_mode: 'Icon background', icon_bg_color: 'Custom icon background color',
+      icon_bg_opacity: 'Icon background opacity', icon_shape: 'Icon background shape',
+      bg_mode: 'Background', bg_color: 'Background color', bg_opacity: 'Opacity / tint strength', bg_gradient: 'Gradient',
+      text_color_mode: 'Text color', text_color: 'Custom text color', border_mode: 'Border', border_color: 'Border color',
+      border_width: 'Border width', shadow: 'Shadow', tap_action: 'Tap action', hold_action: 'Hold action',
+    },
+    thr: { from: 'From value', color: 'Color' },
+    map: { state: 'State', text: 'Display' },
+    bar: {
+      entity: 'Select entity (select / input_select)', style: 'Style', height: 'Height', show_names: 'Show names', show_icons: 'Show icons',
+      hide: 'Hide bar', show_entity: 'Entity', show_state: 'State / states', show_mode: 'Condition',
+      active_color: 'Active button color', active_text_color: 'Active button text color', background: 'Bar background',
+    },
+    button: {
+      type: 'Button type', option: 'Option of the select entity', entity: 'Entity', active_state: 'Active at state',
+      name: 'Name', icon: 'Icon', color: 'Color when active', width: 'Width', tap_action: 'Tap action', hold_action: 'Hold action',
+    },
+  },
+  helpers: {
+    root: {
+      subtitle_entity: 'Overrides the subtitle text, e.g. with the wallbox status.',
+      stack_below: 'Below this card width the image moves below the title. 0 = never.',
+      card_bg_opacity: '0 % = see-through, 100 % = opaque. For “Theme + tint” this is the strength of the tint.',
+      card_blur: 'The background behind the card is blurred – like frosted glass.',
+      bg_opacity: 'For “Theme + tint” this is the strength of the tint.',
+      blur: 'Takes effect when a background image or a transparent card lies behind the values.',
+      background_image: 'Put the image into /config/www and enter /local/filename.jpg.',
+      accent_color: 'Color for icons, bars, glow and the active button – unless you pick something else.',
+      highlight: 'Shown while charging (“Charging” entity or charging glow) – for hybrids and petrol/diesel cars also when the tank is almost empty (then in the warning color).',
+      show_dots: 'Appear at the bottom center as soon as there is more than one vehicle.',
+      remember_vehicle: 'Remembers per browser which vehicle was shown last.',
+    },
+    vehicle: {
+      vehicle_type: 'Electric: charging, charging glow and start/stop. Hybrid: charging plus low fuel warning. Petrol/diesel: low fuel warning only.',
+      accent_color: 'Overrides the accent color from the “Design” tab for this vehicle only.',
+    },
+    fuel: {
+      threshold: 'In the unit of the entity, usually %. As soon as the level drops to or below it, the glow under the car lights up in the warning color.',
+    },
+    image: {
+      url: 'Ideally put a PNG with a transparent background into /config/www and enter /local/….',
+      glow_state: 'Separate multiple states with commas. Default: on, charging',
+    },
+    cc: {
+      show_entity: 'Empty = use entity and state of the charging glow.',
+      charging_entity: 'Optional: fills “Start” while charging and “Stop” while paused.',
+      start_action: 'Overrides the start entity.',
+      stop_action: 'Overrides the stop entity.',
+    },
+    field: { multiply: 'e.g. 0.001 for W → kW', color: 'Color thresholds further down take precedence.' },
+    bar: {
+      background: 'Empty = same as the value tiles (“Design” tab).',
+      show_entity: 'Empty = always show the bar. E.g. the wallbox: only show the bar when a car is connected.',
+    },
+    service: {
+      style: 'Flag and chip show text and remaining days/km, the icon variants only the icon (details on tap). In the corners the flag sits directly on the card edge.',
+      pulse: 'Makes the flag pulse while service is due.',
+    },
+    button: { width: '1 = normal, 0.5 = half, 2 = double', active_state: 'Default: on' },
+  },
+  opt: {
+    image_position: { right: 'Right', left: 'Left' },
+    title_position: { top: 'At the top, full width', column: 'In the left column' },
+    bg_mode: { theme: 'Card background (theme)', tinted: 'Theme + tint', accent: 'Full accent color', custom: 'Custom color', none: 'Transparent (no background)' },
+    card_bg_mode: { theme: 'Theme background', tinted: 'Theme + tint', accent: 'Full accent color', custom: 'Custom color', none: 'Transparent (no background)' },
+    card_border_mode: { theme: 'Like theme', none: 'No border', accent: 'Accent color', custom: 'Custom color' },
+    icon_color_mode: { auto: 'Automatic', accent: 'Accent color', text: 'Same as text', custom: 'Custom color' },
+    icon_bg_mode: { none: 'None', accent: 'Accent color', theme: 'Card background', custom: 'Custom color' },
+    icon_shape: { circle: 'Circle', rounded: 'Rounded', square: 'Square' },
+    text_color_mode: { auto: 'Automatic (good contrast)', theme: 'Theme text color', custom: 'Custom color' },
+    border_mode: { none: 'No border', accent: 'Accent color', theme: 'Subtle (theme)', custom: 'Custom color' },
+    shadow: { theme: 'Like theme', none: 'No shadow', soft: 'Soft', strong: 'Strong' },
+    highlight: { none: 'None', glow: 'Glow', pulse: 'Pulse', border: 'Colored border', scale: 'Slightly larger' },
+    bg_gradient: { on: 'On', off: 'Off' },
+    slot: { left: 'Left (below the title)', right: 'Right (below the image)' },
+    size: { small: 'Small', normal: 'Normal', large: 'Large' },
+    bar_style: { segmented: 'Segmented (pill)', separate: 'Separate buttons' },
+    btn_type: { option: 'Option of the select entity', action: 'Free action (e.g. Favorite ☆)' },
+    service_style: { flag: 'Flag with text', icon: 'Icon in a circle', symbol: 'Icon only (no background)', chip: 'Chip with text (rounded)' },
+    service_position: {
+      'top-right': 'Top right', 'top-left': 'Top left', 'bottom-right': 'Bottom right', 'bottom-left': 'Bottom left',
+      image: 'On the vehicle image', title: 'Next to the title',
+    },
+    show_mode: { is: '… has one of these states', is_not: '… has none of these states' },
+    vehicle_type: { ev: 'Electric vehicle', hybrid: 'Hybrid (plug-in / full hybrid)', combustion: 'Petrol / diesel' },
+  },
+  inherit: 'Default',
+  preview: 'Preview', back: 'Back', edit_field: 'Edit value', edit_button: 'Edit button',
+  move_up: 'Move up', move_down: 'Move down', edit: 'Edit', delete: 'Delete',
+  add_field: 'Add value', add_button: 'Add button', add_all_options: 'Add all options',
+  add_threshold: 'Add color threshold', add_mapping: 'Add translation',
+  thresholds_hint: 'From this value on the color applies – for icon, bar and tile tint. Takes precedence over the color above.',
+  map_hint: 'Replace raw entity states with your own texts, e.g. “charging” → “Charging”.',
+  current_state: 'Current state', left: 'left', right: 'right', no_entity: 'No entity selected',
+  new_field: 'New value', new_button: 'New button', option: 'Option', action: 'Action', no_action_entity: 'no entity',
+  option_missing: 'not in the select options', no_buttons: 'No buttons yet – pick a select entity above and add its options.',
+  no_fields: 'No values yet.',
+  suggest_title: 'Suggestions from your vehicle and wallbox devices', suggest_none: 'No further matching entities found.',
+  suggest_add: 'Add as value', buttons_title: 'Buttons',
+  sample_soc: 'State of charge', sample_range: 'Range', raw_css: 'Custom CSS background from YAML active:',
+  vehicles_title: 'Vehicles in this card', add_vehicle: 'Add vehicle', vehicle: 'Vehicle',
+  new_vehicle: { ev: 'New EV', hybrid: 'New hybrid', combustion: 'New car' },
+  type_short: { ev: 'Electric', hybrid: 'Hybrid', combustion: 'Petrol / diesel' },
+  editing: 'editing',
+  bar_hidden: 'Condition currently not met – the bar is hidden in the card.',
+  preview_vehicle: 'Preview – the service flag is always shown here',
+  state_hint: 'Separate multiple states with commas, e.g. “connected, ready”. Case-insensitive.',
+  now: 'Current',
+  combustion_note: 'Petrol/diesel cars don’t charge – charging glow and start/stop are hidden. The glow lights up for the low fuel warning instead.',
+  card: {
+    service_label: 'Service', overdue: 'overdue', day: 'day', days: 'days',
+    start: 'Start', stop: 'Stop', confirm_start: 'Start charging?', confirm_stop: 'Stop charging?',
+    confirm: 'Are you sure?', invalid_config: 'Invalid configuration', stub_title: 'My EV',
+  },
+};
+
+const langOf = (hass) => String(hass?.locale?.language || hass?.language || 'de').toLowerCase();
+const isDe = (hass) => langOf(hass).startsWith('de');
+// Fehlende EN-Schlüssel fallen auf DE zurück (Sicherheitsnetz, soll aber nie greifen)
+const mergeStrings = (base, over) => { const o = Array.isArray(base) ? [...base] : { ...base };
+  Object.entries(over || {}).forEach(([k, v]) => { o[k] = v && typeof v === 'object' && !Array.isArray(v) && typeof v !== 'function' && base[k] && typeof base[k] === 'object' ? mergeStrings(base[k], v) : v; });
+  return o; };
+const T_EN_FULL = mergeStrings(T_DE, T_EN);
+let T = T_DE;
+let T_LANG = 'de';
+// Liefert true, wenn sich die Sprache geändert hat
+const setLang = (hass) => { const l = isDe(hass) ? 'de' : 'en'; if (l === T_LANG) return false; T_LANG = l; T = l === 'de' ? T_DE : T_EN_FULL; return true; };
 
 const EDITOR_TABS = [
   { id: 'general', icon: 'mdi:car-electric' },
@@ -1757,6 +1986,13 @@ class EvChargeCardEditor extends HTMLElement {
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
+    // Sprache gewechselt (auch wenn eine Karte T schon umgestellt hat): Tabs, Pane und Formulare neu aufbauen
+    if ((setLang(hass) || this._builtLang !== T_LANG) && this._built) {
+      this._built = false;
+      this._paneKey = null;
+      this._refresh();
+      return;
+    }
     if (first) this._refresh();
     else {
       this._pushHass();
@@ -2073,6 +2309,7 @@ class EvChargeCardEditor extends HTMLElement {
   _serviceData() {
     const d = { ...(this._veh().service || {}) };
     Object.entries(SERVICE_DEFAULTS).forEach(([k, v]) => { if (!has(d[k])) d[k] = v; });
+    if (!has(d.label)) d.label = T.card.service_label;
     ['color', 'overdue_color'].forEach((k) => { d[k] = toPicker(d[k]) || (isRawColor(d[k]) ? undefined : SERVICE_DEFAULTS[k]); });
     return d;
   }
@@ -2271,6 +2508,7 @@ class EvChargeCardEditor extends HTMLElement {
 
   _build() {
     this._built = true;
+    this._builtLang = T_LANG;
     this.shadowRoot.innerHTML = `<style>${CARD_CSS}${EDITOR_CSS}</style><div class="vbar"></div><div class="tabs"></div><div class="pane"></div>`;
     this._vbarEl = this.shadowRoot.querySelector('.vbar');
     this._tabsEl = this.shadowRoot.querySelector('.tabs');
@@ -2362,7 +2600,7 @@ class EvChargeCardEditor extends HTMLElement {
             (v) => this._setVehProp('charge_control', this._cleanSub(v, CC_DEFAULTS, this._veh().charge_control, ['start_color', 'stop_color']))));
         }
         pane.appendChild(this._makeForm('service', () => this._schemaService(), () => this._serviceData(),
-          (v) => this._setVehProp('service', this._cleanSub(v, SERVICE_DEFAULTS, this._veh().service, ['color', 'overdue_color', 'text_color']))));
+          (v) => this._setVehProp('service', this._cleanSub(v, { ...SERVICE_DEFAULTS, label: T.card.service_label }, this._veh().service, ['color', 'overdue_color', 'text_color']))));
         break;
       case 'fields':
         this._list = this._el('div');
@@ -2982,7 +3220,7 @@ if (!window.customCards.some((c) => c.type === CARD_TYPE)) {
   window.customCards.push({
     type: CARD_TYPE,
     name: 'EV Charge Card',
-    description: 'E-Auto, Hybrid oder Verbrenner + Wallbox: Ladestand/Tank, Reichweite, Fahrzeugbild, Start/Stopp und Lademodus-Buttons – mehrere Fahrzeuge per Wischen. Design und Editor wie bei der Abfall-Karte und der Status-Übersicht.',
+    description: 'EV, hybrid or combustion car + wallbox: state of charge/fuel, range, vehicle image, start/stop and charging mode buttons – multiple vehicles by swiping. Same design system and editor as Trash Card Plus, Status Summary Card and Radial Flow Card.',
     preview: true,
     documentationURL: 'https://github.com/Kohle93/EV-Charge-Card',
   });

@@ -1,44 +1,44 @@
-# EV Charge Card – Beispielkonfiguration (v1.2) mit zwei Fahrzeugen
-# Entitäts-IDs sind Platzhalter -> an deine Auto- und Wallbox-Entitäten anpassen.
-# Auto-Bilder (am besten PNG mit transparentem Hintergrund) nach /config/www/ev/ legen –
-# z. B. die mitgelieferten, frei nutzbaren Illustrationen examples/auto.png und examples/auto-2.png
-# oder eigene Fotos, an denen du die Rechte hast.
-# Alles lässt sich auch im visuellen Editor einstellen (Fahrzeug oben wählen, Tabs Allgemein · Anzeige · Fahrzeug · Werte · Buttons · Design).
-# Farben: Farbpicker-Werte [r, g, b], Hex (#9ccc3c) oder HA-Farbnamen (green, amber …).
+# EV Charge Card – example configuration (v1.2) with two vehicles
+# Entity IDs are placeholders -> adapt them to your car and wallbox entities.
+# Put car images (ideally PNG with a transparent background) into /config/www/ev/ –
+# e.g. the bundled, freely usable illustrations examples/auto.png and examples/auto-2.png
+# or your own photos that you have the rights to.
+# Everything can also be set in the visual editor (choose the vehicle at the top, tabs General · Display · Vehicle · Values · Buttons · Design).
+# Colors: color picker values [r, g, b], hex (#9ccc3c) or HA color names (green, amber …).
 
 type: custom:ev-charge-card
 
-# ---------- Mehrere Fahrzeuge ----------
-show_dots: true              # Punkte unten in der Mitte (ab 2 Fahrzeugen)
-swipe: true                  # Wischen schaltet um
-remember_vehicle: true       # zuletzt gewähltes Fahrzeug merken
+# ---------- Multiple vehicles ----------
+show_dots: true              # dots at the bottom center (from 2 vehicles)
+swipe: true                  # swipe to switch
+remember_vehicle: true       # remember the last selected vehicle
 
-# ---------- Anzeige ----------
+# ---------- Display ----------
 image_position: right        # right | left
-title_position: top          # top (volle Breite) | column (linke Spalte)
-left_width: 45               # % Breite linke Spalte
-stack_below: 260             # unter dieser Kartenbreite (px) Bild unter den Titel, 0 = nie
+title_position: top          # top (full width) | column (left column)
+left_width: 45               # % width of the left column
+stack_below: 260             # below this card width (px) the image moves under the title, 0 = never
 
-# ---------- Design (wie Abfall-Karte / Status-Übersicht) ----------
+# ---------- Design (same as Trash Card Plus / Status Summary Card / Radial Flow Card) ----------
 accent_color: [3, 169, 244]
 card_radius: 24
-bg_mode: tinted              # Werte-Kacheln: theme | tinted | accent | custom | none
+bg_mode: tinted              # value tiles: theme | tinted | accent | custom | none
 bg_opacity: 10
 icon_bg_mode: accent         # none | accent | theme | custom
-highlight: glow              # beim Laden / Tank fast leer: none | glow | pulse | border | scale
+highlight: glow              # while charging / tank almost empty: none | glow | pulse | border | scale
 
 vehicles:
-  # ---------- Fahrzeug 1: Elektroauto ----------
+  # ---------- Vehicle 1: electric car ----------
   - vehicle_type: ev
-    title: Mein E-Auto
+    title: My EV
     title_icon: mdi:car-electric
     subtitle_entity: sensor.wallbox_car_state
     image:
       url: /local/ev/auto.png
       max_height: 160
-      glow_entity: sensor.wallbox_car_state   # Leuchten unter dem Auto beim Laden
+      glow_entity: sensor.wallbox_car_state   # glow under the car while charging
       glow_state: "Charging"
-    charge_control:            # Start/Stopp-Buttons unter dem Auto, nur sichtbar wenn eingesteckt
+    charge_control:            # start/stop buttons under the car, only visible when plugged in
       show_entity: binary_sensor.wallbox_car_connected
       show_state: "on"
       start_entity: button.wallbox_start_charging
@@ -47,7 +47,7 @@ vehicles:
       charging_state: "on"
     fields:
       - entity: sensor.car_battery_level
-        name: Ladestand
+        name: State of charge
         size: large
         show_bar: true
         color_thresholds:
@@ -55,29 +55,30 @@ vehicles:
           - { from: 20, color: [255, 152, 0] }
           - { from: 50, color: [76, 175, 80] }
       - entity: sensor.car_range
-        name: Reichweite
+        name: Range
         icon: mdi:map-marker-distance
         decimals: 0
       - entity: sensor.wallbox_power
-        name: Ladeleistung
+        name: Charging power
         icon: mdi:lightning-bolt
         multiply: 0.001         # W -> kW
         unit: kW
         decimals: 1
-    service:                   # Wartungs-Fähnchen
-      days_entity: sensor.car_tage_bis_wartung
-      days_threshold: 30         # zeigen ab ≤ 30 Tagen …
-      km_entity: sensor.car_km_bis_wartung
-      km_threshold: 1000         # … oder ≤ 1000 km
-      style: flag                # flag (Fähnchen) | icon (Symbol im Kreis) | symbol (nur Symbol) | chip
+    service:                   # service flag
+      days_entity: sensor.car_days_until_service
+      days_threshold: 30         # show from ≤ 30 days …
+      km_entity: sensor.car_km_until_service
+      km_threshold: 1000         # … or ≤ 1000 km
+      style: flag                # flag | icon (icon in a circle) | symbol (icon only) | chip
       position: top-right        # top-right | top-left | bottom-right | bottom-left | image | title
+      label: Service
       # color: [255, 152, 0]
       # overdue_color: [244, 67, 54]
       # pulse: true
     button_bar:
       entity: select.wallbox_charging_mode
-      show_entity: sensor.wallbox_car_state   # Leiste nur zeigen, wenn …
-      show_state: "connected, ready, charging" # … die Wallbox einen dieser Zustände meldet
+      show_entity: sensor.wallbox_car_state   # only show the bar when …
+      show_state: "connected, ready, charging" # … the wallbox reports one of these states
     buttons:
       - option: Default
         name: Standard
@@ -86,31 +87,32 @@ vehicles:
         icon: mdi:leaf
       - option: Next Trip
         icon: mdi:calendar-clock
-      - type: action            # Favoriten-Stern
+      - type: action            # favorite star
         icon: mdi:star
-        entity: input_boolean.ev_favorit
+        entity: input_boolean.ev_favorite
 
-  # ---------- Fahrzeug 2: Benzin / Diesel ----------
+  # ---------- Vehicle 2: petrol / diesel ----------
   - vehicle_type: combustion
-    title: Zweitwagen
+    title: Second car
     title_icon: mdi:car
-    subtitle: Benzin
-    accent_color: [255, 152, 0]  # eigene Akzentfarbe nur für dieses Fahrzeug (optional)
+    subtitle: Petrol
+    accent_color: [255, 152, 0]  # own accent color for this vehicle only (optional)
     image:
       url: /local/ev/auto-2.png
       max_height: 160
     service:
-      days_entity: sensor.zweitwagen_tage_bis_wartung
-      km_entity: sensor.zweitwagen_km_bis_wartung
+      days_entity: sensor.second_car_days_until_service
+      km_entity: sensor.second_car_km_until_service
       style: chip
       position: image
-    fuel:                        # Glow leuchtet, sobald der Tank ≤ threshold ist
-      entity: sensor.zweitwagen_tank
-      threshold: 15              # in der Einheit der Entität, meist %
+      label: Service
+    fuel:                        # the glow lights up as soon as the tank is ≤ threshold
+      entity: sensor.second_car_fuel
+      threshold: 15              # in the unit of the entity, usually %
       color: [244, 67, 54]
     fields:
-      - entity: sensor.zweitwagen_tank
-        name: Tank
+      - entity: sensor.second_car_fuel
+        name: Fuel
         icon: mdi:gas-station
         size: large
         show_bar: true
@@ -118,18 +120,18 @@ vehicles:
           - { from: 0,  color: [244, 67, 54] }
           - { from: 25, color: [255, 152, 0] }
           - { from: 50, color: [76, 175, 80] }
-      - entity: sensor.zweitwagen_reichweite
-        name: Reichweite
+      - entity: sensor.second_car_range
+        name: Range
         icon: mdi:map-marker-distance
-      - entity: sensor.zweitwagen_kilometerstand
-        name: Kilometerstand
+      - entity: sensor.second_car_mileage
+        name: Mileage
         icon: mdi:counter
 
-  # ---------- Weiteres Fahrzeug, z. B. Hybrid ----------
+  # ---------- Another vehicle, e.g. hybrid ----------
   # - vehicle_type: hybrid
   #   title: Hybrid
-  #   fuel: { entity: sensor.hybrid_tank, threshold: 20 }
-  #   charge_control: { charging_entity: binary_sensor.hybrid_laedt }
+  #   fuel: { entity: sensor.hybrid_fuel, threshold: 20 }
+  #   charge_control: { charging_entity: binary_sensor.hybrid_charging }
   #   fields:
-  #     - { entity: sensor.hybrid_akku, name: Akku, show_bar: true }
-  #     - { entity: sensor.hybrid_tank, name: Tank, icon: mdi:gas-station, show_bar: true }
+  #     - { entity: sensor.hybrid_battery, name: Battery, show_bar: true }
+  #     - { entity: sensor.hybrid_fuel, name: Fuel, icon: mdi:gas-station, show_bar: true }
