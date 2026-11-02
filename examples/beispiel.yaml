@@ -45,6 +45,10 @@ vehicles:
       stop_entity: button.wallbox_stop_charging
       charging_entity: binary_sensor.wallbox_charging
       charging_state: "on"
+    charge_estimate:           # live state of charge between sensor updates
+      capacity: 60               # battery capacity in kWh
+      power_entity: sensor.wallbox_power
+      loss: 10                   # charging loss in %
     fields:
       - entity: sensor.car_battery_level
         name: State of charge
