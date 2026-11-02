@@ -1,0 +1,69 @@
+# Template-Sensor: Ladestand live berechnen (gleiche Logik wie charge_estimate der Karte)
+#
+# Einfügen in configuration.yaml unter `template:` (oder in eine eingebundene Datei).
+# Danach: Entwicklerwerkzeuge -> YAML -> Template-Entitäten neu laden (oder HA neu starten).
+#
+# Logik:
+#   - Echter Ladestand ändert sich  -> gilt sofort, Schätzung startet neu davon.
+#   - Eingesteckt und Leistung > 0  -> alle Minute (und bei jeder Leistungsänderung)
+#                                      kWh += kW_vorher * Stunden * (1 - Verlust)
+#   - Nicht eingesteckt             -> Sensor zeigt nur den echten Wert.
+#   - Ergebnis = min(100, echter Wert + kWh / Kapazität * 100)
+#
+# ANPASSEN (6 Stellen mit "<- anpassen"):
+#   soc_entity, power_entity, plug_entity, plug_state, capacity, loss
+#   und die Entity-ID des Sensors selbst (siehe Hinweis bei `me`).
+#
+# Hinweis `me`: Der Sensor liest seinen eigenen vorherigen Zustand über seine
+# Entity-ID. Mit dem Namen unten lautet sie sensor.ev_ladestand_berechnet.
+# Änderst du den Namen, passe `me` an.
+
+template:
+  - triggers:
+      - trigger: time_pattern
+        minutes: "/1"
+      - trigger: state
+        entity_id:
+          - sensor.auto_ladestand            # <- anpassen (soc_entity)
+          - sensor.wallbox_leistung          # <- anpassen (power_entity)
+          - binary_sensor.wallbox_auto_verbunden  # <- anpassen (plug_entity)
+    variables:
+      # ---- Einstellungen ----
+      soc_entity: sensor.auto_ladestand               # <- anpassen: echter Ladestand in %
+      power_entity: sensor.wallbox_leistung           # <- anpassen: Ladeleistung (W, kW oder MW)
+      plug_entity: binary_sensor.wallbox_auto_verbunden  # <- anpassen: Fahrzeug eingesteckt
+      plug_state: "on"                                # <- anpassen: Zustand für "eingesteckt"
+      capacity: 60                                    # <- anpassen: Batteriekapazität in kWh
+      loss: 10                                        # <- anpassen: Ladeverlust in %
+      me: sensor.ev_ladestand_berechnet
+      # ---- Berechnung ----
+      soc: "{{ states(soc_entity) | float(none) }}"
+      plugged: "{{ is_state(plug_entity, plug_state) }}"
+      unit: "{{ state_attr(power_entity, 'unit_of_measurement') }}"
+      p_raw: "{{ states(power_entity) | float(0) }}"
+      p_kw: >
+        {% if unit == 'W' %}{{ p_raw / 1000 }}
+        {% elif unit == 'MW' %}{{ p_raw * 1000 }}
+        {% else %}{{ p_raw }}{% endif %}
+      prev_base: "{{ state_attr(me, 'base') | float(none) }}"
+      prev_added: "{{ state_attr(me, 'added_kwh') | float(0) }}"
+      prev_power: "{{ state_attr(me, 'last_power_kw') | float(0) }}"
+      last: "{{ as_datetime(state_attr(me, 'last_calc')) if state_attr(me, 'last_calc') else none }}"
+      # Zeit seit dem letzten Schritt, max. 10 Minuten (Schutz bei HA-Neustart / Ausfall)
+      dt_h: "{{ ([(now() - last).total_seconds(), 600] | min) / 3600 if last else 0 }}"
+      reset: "{{ soc is none or prev_base is none or soc != prev_base or not plugged }}"
+      added: "{{ 0 if reset else prev_added + prev_power * dt_h * (1 - loss / 100) }}"
+    sensor:
+      - name: EV Ladestand berechnet
+        unique_id: ev_ladestand_berechnet
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+        state: >
+          {{ none if soc is none else ([100, soc + added / capacity * 100] | min) | round(1) }}
+        attributes:
+          base: "{{ soc }}"                                   # letzter echter Wert
+          added_kwh: "{{ added | float(0) | round(4) }}"      # seit dem echten Wert geladen (nach Verlust)
+          last_power_kw: "{{ p_kw | float(0) if plugged else 0 }}"
+          last_calc: "{{ now().isoformat() }}"
+          charging: "{{ plugged and p_kw | float(0) > 0 }}"
