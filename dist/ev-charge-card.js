@@ -16,7 +16,7 @@
  *   Ressource: /local/ev-charge-card/ev-charge-card.js  (Typ: JavaScript-Modul)
  */
 
-const CARD_VERSION = '1.4.0';
+const CARD_VERSION = '1.5.0';
 const CARD_TYPE = 'ev-charge-card';
 const EDITOR_TYPE = 'ev-charge-card-editor';
 
@@ -174,6 +174,7 @@ const ITEM_STYLE_KEYS = [
 const IMAGE_DEFAULTS = { size: 100, max_height: 180, offset_x: 0, offset_y: 0, flip: false, shadow: true, hide: false };
 const CC_DEFAULTS = { show_names: true, confirm: false, size: 36 };
 const BAR_DEFAULTS = { style: 'segmented', height: 44, show_names: true, show_icons: true, hide: false, show_mode: 'is' };
+const ESTIMATE_DEFAULTS = { loss: 10 };
 const FUEL_DEFAULTS = { threshold: 15, color: [255, 152, 0] };
 const SERVICE_DEFAULTS = {
   days_threshold: 30, km_threshold: 1000, style: 'flag', position: 'top-right', icon: 'mdi:wrench-clock',
@@ -188,7 +189,7 @@ const SERVICE_POSITIONS = ['top-right', 'top-left', 'bottom-right', 'bottom-left
 // Diese Schlüssel gehören zu einem Fahrzeug (vehicles[]), alles andere gilt für die ganze Karte
 const VEHICLE_KEYS = [
   'vehicle_type', 'title', 'title_icon', 'subtitle', 'subtitle_entity', 'title_tap_action', 'title_hold_action',
-  'image', 'charge_control', 'fuel', 'service', 'fields', 'button_bar', 'buttons',
+  'image', 'charge_control', 'charge_estimate', 'fuel', 'service', 'fields', 'button_bar', 'buttons',
 ];
 const VEHICLE_TYPES = ['ev', 'hybrid', 'combustion'];
 const TYPE_ICONS = { ev: 'mdi:car-electric', hybrid: 'mdi:car-electric-outline', combustion: 'mdi:car' };
@@ -570,6 +571,72 @@ const glowInfo = (cfg, hass) => {
 };
 const isCharging = (cfg, hass) => glowInfo(cfg, hass).active;
 
+
+/* ------------------------------------------------------------------ */
+/*  Ladestand-Schätzung (Kapazität + Ladeleistung)                     */
+/* ------------------------------------------------------------------ */
+
+// Eingesteckt? Gleiche Logik wie die Start/Stopp-Buttons (show_entity bzw. Glow-Entität)
+const pluggedIn = (cfg, hass) => {
+  const cc = cfg.charge_control || {};
+  const im = cfg.image || {};
+  const ent = cc.show_entity || im.glow_entity;
+  if (ent) return stateIs(hass, ent, has(cc.show_entity) ? cc.show_state : cc.show_state ?? im.glow_state, ['on', 'charging']);
+  if (cc.charging_entity) return stateIs(hass, cc.charging_entity, cc.charging_state, ['on', 'charging', 'Charging']);
+  return true;
+};
+
+// Index des Werts, der geschätzt wird: charge_estimate.entity, sonst der erste Wert mit Balken
+const estimateField = (cfg) => {
+  const ce = cfg.charge_estimate;
+  if (!ce || vehicleType(cfg) === 'combustion' || !ce.power_entity || !(Number(ce.capacity) > 0)) return -1;
+  const fields = cfg.fields || [];
+  if (ce.entity) return fields.findIndex((f) => f && f.entity === ce.entity);
+  return fields.findIndex((f) => f && f.show_bar && f.entity);
+};
+
+// Ladeleistung in kW (W / kW / MW aus der Einheit, oder power_multiply)
+const powerKw = (cfg, hass) => {
+  const ce = cfg.charge_estimate || {};
+  const st = hass?.states?.[ce.power_entity];
+  if (!st || !isNum(st.state)) return 0;
+  let mult = 1;
+  if (isNum(ce.power_multiply)) mult = Number(ce.power_multiply);
+  else {
+    const u = String(st.attributes?.unit_of_measurement || '').trim();
+    mult = u === 'W' ? 0.001 : u === 'MW' ? 1000 : 1;
+  }
+  return Math.max(0, Number(st.state) * mult);
+};
+
+// Schreibt den Schätzzustand `e` fort (Energie seit dem letzten echten Sensorwert). Liefert null ohne Schätzung.
+const stepEstimate = (e, cfg, hass, now) => {
+  const idx = estimateField(cfg);
+  if (idx < 0) return null;
+  const f = cfg.fields[idx];
+  const st = hass?.states?.[f.entity];
+  const real = st ? fieldValue(f, st, hass).num : null;
+  const stamp = st ? `${st.last_updated}|${st.state}` : '';
+  const ce = cfg.charge_estimate;
+  const loss = Math.max(0, Math.min(100, has(ce.loss) && isNum(ce.loss) ? Number(ce.loss) : ESTIMATE_DEFAULTS.loss));
+  // Neuer echter Sensorwert: gilt sofort, die Schätzung startet von vorn
+  const n = e && e.stamp === stamp ? e : { stamp, added: 0, power: 0, active: false, t: now };
+  // Energie seit dem letzten Schritt mit der damaligen Leistung aufsummieren (Verluste abziehen)
+  if (n.active) n.added += n.power * Math.max(0, now - n.t) / 3.6e6 * (1 - loss / 100);
+  const plugged = real !== null && pluggedIn(cfg, hass);
+  if (!plugged) n.added = 0;
+  n.power = plugged ? powerKw(cfg, hass) : 0;
+  n.active = plugged && n.power > 0;
+  n.t = now;
+  const cap = Number(ce.capacity);
+  const max = Number(f.bar_max ?? 100);
+  n.fieldIndex = idx;
+  n.base = real;
+  n.value = real === null ? null : Math.min(max, real + (n.added / cap) * 100);
+  n.show = plugged && n.added > 0 || n.active;
+  return n;
+};
+
 // Bedingung für die Button-Leiste: nur anzeigen, wenn Entität einen der Zustände hat (bzw. nicht hat)
 const barVisible = (cfg, hass) => {
   const bb = cfg.button_bar || {};
@@ -719,9 +786,14 @@ const renderImage = (cfg, hass, opts = {}) => {
 };
 
 // Eine Werte-Kachel. `override` = { text, unit, num } für Beispiele im Editor.
-const renderField = (f, i, cfg, hass, override = null) => {
+const renderField = (f, i, cfg, hass, override = null, est = null) => {
   const st = hass?.states?.[f.entity];
-  const v = override || fieldValue(f, st, hass);
+  let v = override || fieldValue(f, st, hass);
+  const useEst = !override && est && est.show && est.value !== null && v.num !== null && v.num !== undefined;
+  if (useEst) {
+    const dec = has(f.decimals) ? Number(f.decimals) : 0;
+    v = { ...v, num: est.value, text: new Intl.NumberFormat(localeOf(hass), { minimumFractionDigits: dec, maximumFractionDigits: dec }).format(est.value) };
+  }
   const vars = tileVars(f, cfg, v.num);
   const showIcon = f.show_icon !== false;
   const showName = f.show_name !== false;
@@ -733,14 +805,21 @@ const renderField = (f, i, cfg, hass, override = null) => {
     const min = Number(f.bar_min ?? 0);
     const max = Number(f.bar_max ?? 100);
     const pct = Math.max(0, Math.min(100, ((v.num - min) / (max - min || 1)) * 100));
-    bar = `<div class="pbar"><div class="pbar-fill" style="width:${pct.toFixed(1)}%"></div></div>`;
+    if (useEst) {
+      const basePct = Math.max(0, Math.min(100, ((est.base - min) / (max - min || 1)) * 100));
+      const delay = est.active ? ` animation-delay:-${Date.now() % 1000}ms;` : '';
+      bar = `<div class="pbar"><div class="pbar-fill" data-est="fill" style="width:${basePct.toFixed(1)}%"></div>`
+        + `<div class="pbar-est ${est.active ? 'active' : ''}" data-est="add" title="${esc(T.card.estimated)}" style="left:${basePct.toFixed(1)}%;width:${Math.max(0, pct - basePct).toFixed(1)}%;${delay}"></div></div>`;
+    } else {
+      bar = `<div class="pbar"><div class="pbar-fill" style="width:${pct.toFixed(1)}%"></div></div>`;
+    }
   }
   return `
     <div class="field size-${esc(f.size || 'normal')} ${v.unavailable ? 'unavail' : ''}" data-act="field:${i}" style="${esc(styleString(vars))}">
       ${showIcon ? `<div class="ico"><ha-icon icon="${esc(icon)}"></ha-icon></div>` : ''}
       <div class="ftext">
         ${showName ? `<div class="fname">${esc(name)}</div>` : ''}
-        <div class="fvalue">${esc(v.text)}${v.unit ? `<span class="unit">${esc(v.unit)}</span>` : ''}</div>
+        <div class="fvalue">${useEst ? `<span class="vnum">${esc(v.text)}</span>` : esc(v.text)}${v.unit ? `<span class="unit">${esc(v.unit)}</span>` : ''}</div>
         ${bar}
       </div>
     </div>`;
@@ -793,7 +872,7 @@ const renderBody = (cfg, hass, opts = {}) => {
   const right = [];
   (cfg.fields || []).forEach((f, i) => {
     if (!f) return;
-    (f.slot === 'right' ? right : left).push(renderField(f, i, cfg, hass));
+    (f.slot === 'right' ? right : left).push(renderField(f, i, cfg, hass, null, opts.est && opts.est.fieldIndex === i ? opts.est : null));
   });
   const cols = Math.max(1, Number(cfg.right_columns) || 1);
   const titleInColumn = cfg.title_position === 'column';
@@ -880,7 +959,12 @@ const CARD_CSS = `
   .size-large .fvalue { font-size: calc(var(--evc-value-size, 18px) * 1.45); }
   .size-large .ico { width: calc(var(--evc-isize, 20px) * 2.2); height: calc(var(--evc-isize, 20px) * 2.2); --mdc-icon-size: calc(var(--evc-isize, 20px) * 1.2); }
   .unit { font-size:.65em; font-weight:400; color: var(--t-text2, var(--evc-text2)); margin-left:3px; }
-  .pbar { height:6px; border-radius:3px; margin-top:6px; overflow:hidden; background: color-mix(in srgb, currentColor 14%, transparent); }
+  .pbar { position:relative; height:6px; border-radius:3px; margin-top:6px; overflow:hidden; background: color-mix(in srgb, currentColor 14%, transparent); }
+  .pbar-est { position:absolute; top:0; bottom:0; opacity:.6; transition: width .6s ease, left .6s ease;
+    background: repeating-linear-gradient(135deg, var(--t-accent, var(--evc-accent)) 0 4px, transparent 4px 8px); background-size: 11.3137px 11.3137px; }
+  .pbar-est.active { animation: evc-hatch 1s linear infinite; }
+  @keyframes evc-hatch { from { background-position:0 0; } to { background-position:11.3137px 0; } }
+  @media (prefers-reduced-motion: reduce) { .pbar-est.active { animation:none; } }
   .pbar-fill { height:100%; border-radius:3px; background: var(--t-accent, var(--evc-accent)); transition: width .6s ease; }
 
   /* ---------- Fahrzeugbild ---------- */
@@ -1030,6 +1114,7 @@ class EvChargeCard extends HTMLElement {
     this._holdTimer = null;
     this._held = false;
     this._states = new Map();
+    this._est = new Map();
     this._idx = 0;
     this._drag = null;
     this._swiped = false;
@@ -1048,6 +1133,7 @@ class EvChargeCard extends HTMLElement {
     }
     this._idx = Math.max(0, Math.min(this._idx, this._vehicles.length - 1));
     this._states.clear();
+    this._est.clear();
     this._html = '';
     this._styleKey = '';
     this._render();
@@ -1070,6 +1156,62 @@ class EvChargeCard extends HTMLElement {
   }
   get hass() { return this._hass; }
 
+
+  /* ---------- Ladestand-Schätzung ---------- */
+
+  connectedCallback() {
+    this._startTimer();
+  }
+
+  disconnectedCallback() {
+    clearInterval(this._timer);
+    this._timer = null;
+  }
+
+  _hasEstimate() {
+    return this._vehicles.some((_, i) => estimateField(vehCfg(this._config, i)) >= 0);
+  }
+
+  _startTimer() {
+    if (this._timer || !this._config || !this._hasEstimate()) return;
+    this._timer = setInterval(() => this._tick(), 5000);
+  }
+
+  _updateEstimates() {
+    if (!this._hass || !this._config) return;
+    const now = Date.now();
+    this._vehicles.forEach((_, i) => {
+      const n = stepEstimate(this._est.get(i), vehCfg(this._config, i), this._hass, now);
+      if (n) this._est.set(i, n); else this._est.delete(i);
+    });
+    this._startTimer();
+  }
+
+  // Alle paar Sekunden: Schätzung fortschreiben und Balken/Wert direkt im DOM nachziehen (kein Neuaufbau, Schraffur läuft weiter)
+  _tick() {
+    if (!this._hass || !this._root) return;
+    const before = new Map([...this._est].map(([k, e]) => [k, e.show ? Math.round(e.value) : null]));
+    this._updateEstimates();
+    let rebuild = false;
+    this._est.forEach((e, vi) => {
+      const f = vehCfg(this._config, vi).fields[e.fieldIndex] || {};
+      const slide = this._root.querySelector(`.slide[data-v="${vi}"]`);
+      const field = slide?.querySelector(`.field[data-act="field:${e.fieldIndex}"]`);
+      const shown = e.show ? Math.round(e.value) : null;
+      if (before.get(vi) !== shown || !field || (f.show_bar && !!field.querySelector('[data-est]') !== !!e.show)) { rebuild = true; return; }
+      if (!e.show || !f.show_bar) return;
+      const min = Number(f.bar_min ?? 0);
+      const max = Number(f.bar_max ?? 100);
+      const pc = (x) => Math.max(0, Math.min(100, ((x - min) / (max - min || 1)) * 100));
+      const add = field.querySelector('[data-est="add"]');
+      const fill = field.querySelector('[data-est="fill"]');
+      if (!add || !fill) return;
+      add.style.width = `${Math.max(0, pc(e.value) - pc(e.base)).toFixed(1)}%`;
+      add.classList.toggle('active', e.active);
+    });
+    if (rebuild) this._render();
+  }
+
   getCardSize() { return 5; }
   getGridOptions() { return { columns: 12, min_columns: 6 }; }
 
@@ -1091,6 +1233,8 @@ class EvChargeCard extends HTMLElement {
       add(c.button_bar?.show_entity);
       const cc = c.charge_control || {};
       [cc.show_entity, cc.start_entity, cc.stop_entity, cc.charging_entity].forEach(add);
+      add(c.charge_estimate?.power_entity);
+      add(c.charge_estimate?.entity);
       add(c.button_bar?.entity);
       c.fields.forEach((f) => add(f?.entity));
       c.buttons.forEach((b) => add(b?.entity));
@@ -1169,7 +1313,7 @@ class EvChargeCard extends HTMLElement {
     const n = this._vehicles.length;
     const slides = this._vehicles.map((_, i) => {
       const eff = vehCfg(cfg, i);
-      return `<div class="slide" data-v="${i}" style="${esc(styleString(slideVars(eff)))}">${renderBody(eff, this._hass)}</div>`;
+      return `<div class="slide" data-v="${i}" style="${esc(styleString(slideVars(eff)))}">${renderBody(eff, this._hass, { est: this._est.get(i) })}</div>`;
     }).join('');
     const dots = n > 1 && cfg.show_dots !== false
       ? `<div class="dots" role="tablist">${this._vehicles.map((v, i) => `<button class="dot" type="button" role="tab" data-act="dot:${i}" title="${esc(v.title || `${T.vehicle} ${i + 1}`)}" aria-label="${esc(v.title || `${T.vehicle} ${i + 1}`)}"><span></span></button>`).join('')}</div>`
@@ -1179,6 +1323,7 @@ class EvChargeCard extends HTMLElement {
 
   _render() {
     if (!this._config) return;
+    this._updateEstimates();
     this._ensureSkeleton();
     this._applyCardStyle();
     this._checkStack();
@@ -1420,7 +1565,7 @@ const T_DE = {
   },
   groups: {
     title_actions: 'Aktionen', arrangement: 'Anordnung', size: 'Größe & Umbruch', carousel: 'Mehrere Fahrzeuge',
-    vehicle: 'Fahrzeug', vehicle_color: 'Farbe', fuel: 'Tank-Warnung',
+    vehicle: 'Fahrzeug', vehicle_color: 'Farbe', fuel: 'Tank-Warnung', estimate: 'Ladestand live berechnen',
     service: 'Wartung', service_look: 'Wartung – Aussehen & Position', service_actions: 'Wartung – Aktionen',
     bar_condition: 'Nur anzeigen, wenn …',
     image: 'Fahrzeugbild', glow: 'Lade-Glow (Laden)', image_actions: 'Aktionen',
@@ -1471,6 +1616,10 @@ const T_DE = {
       color: 'Farbe', overdue_color: 'Farbe wenn überfällig', show_label: 'Text anzeigen', show_value: 'Rest-Tage / Rest-km anzeigen',
       size: 'Größe', offset_x: 'Versatz horizontal', offset_y: 'Versatz vertikal', pulse: 'Pulsieren',
       tap_action: 'Aktion beim Antippen', hold_action: 'Aktion beim Halten',
+    },
+    estimate: {
+      capacity: 'Batteriekapazität (kWh)', power_entity: 'Ladeleistung der Wallbox (Entität)', loss: 'Ladeverlust (%)',
+      power_multiply: 'Faktor zur Umrechnung in kW (optional)', entity: 'Zu schätzender Wert (optional)',
     },
     fuel: {
       entity: 'Tankfüllstand (Entität)', attribute: 'Attribut statt Zustand (optional)', threshold: 'Warnen ab Füllstand (höchstens)', color: 'Farbe der Warnung',
@@ -1527,6 +1676,11 @@ const T_DE = {
     vehicle: {
       vehicle_type: 'Elektro: Laden, Lade-Glow und Start/Stopp. Hybrid: Laden plus Tank-Warnung. Benzin/Diesel: nur Tank-Warnung.',
       accent_color: 'Überschreibt die Akzentfarbe aus dem Tab „Design“ nur für dieses Fahrzeug.',
+    },
+    estimate: {
+      power_entity: 'Einheit W, kW oder MW wird automatisch erkannt. Geschätzt wird nur, solange das Fahrzeug eingesteckt ist (siehe „Laden Start / Stopp“ → Anzeigen wenn) und die Leistung größer 0 ist.',
+      power_multiply: 'Nur nötig, wenn die Entität keine Einheit hat und nicht in kW misst, z. B. 0.001 für W.',
+      entity: 'Leer = erster Wert mit Fortschrittsbalken. Ein neuer echter Sensorwert ersetzt die Schätzung sofort; der berechnete Zuwachs erscheint schraffiert im Balken.',
     },
     fuel: {
       threshold: 'In der Einheit der Entität, meist %. Sobald der Füllstand darauf oder darunter fällt, leuchtet der Glow unter dem Auto in der Warnfarbe.',
@@ -1603,7 +1757,7 @@ const T_DE = {
   combustion_note: 'Bei Benzin/Diesel gibt es kein Laden – Lade-Glow und Start/Stopp sind ausgeblendet. Der Glow leuchtet über die Tank-Warnung.',
   // Texte in der Karte selbst (außerhalb des Editors)
   card: {
-    service_label: 'Wartung', overdue: 'überfällig', day: 'Tag', days: 'Tage',
+    estimated: 'Geschätzt aus Ladeleistung', service_label: 'Wartung', overdue: 'überfällig', day: 'Tag', days: 'Tage',
     start: 'Start', stop: 'Stopp', confirm_start: 'Ladevorgang starten?', confirm_stop: 'Ladevorgang stoppen?',
     confirm: 'Bist du sicher?', invalid_config: 'Ungültige Konfiguration', stub_title: 'Mein E-Auto',
   },
@@ -1621,7 +1775,7 @@ const T_EN = {
   },
   groups: {
     title_actions: 'Actions', arrangement: 'Arrangement', size: 'Size & stacking', carousel: 'Multiple vehicles',
-    vehicle: 'Vehicle', vehicle_color: 'Color', fuel: 'Low fuel warning',
+    vehicle: 'Vehicle', vehicle_color: 'Color', fuel: 'Low fuel warning', estimate: 'Calculate state of charge live',
     service: 'Service', service_look: 'Service – look & position', service_actions: 'Service – actions',
     bar_condition: 'Only show if …',
     image: 'Vehicle image', glow: 'Charging glow', image_actions: 'Actions',
@@ -1671,6 +1825,10 @@ const T_EN = {
       color: 'Color', overdue_color: 'Color when overdue', show_label: 'Show text', show_value: 'Show remaining days / km',
       size: 'Size', offset_x: 'Horizontal offset', offset_y: 'Vertical offset', pulse: 'Pulse',
       tap_action: 'Tap action', hold_action: 'Hold action',
+    },
+    estimate: {
+      capacity: 'Battery capacity (kWh)', power_entity: 'Wallbox charging power (entity)', loss: 'Charging loss (%)',
+      power_multiply: 'Factor to convert to kW (optional)', entity: 'Value to estimate (optional)',
     },
     fuel: {
       entity: 'Fuel level (entity)', attribute: 'Attribute instead of state (optional)', threshold: 'Warn at level (or below)', color: 'Warning color',
@@ -1727,6 +1885,11 @@ const T_EN = {
     vehicle: {
       vehicle_type: 'Electric: charging, charging glow and start/stop. Hybrid: charging plus low fuel warning. Petrol/diesel: low fuel warning only.',
       accent_color: 'Overrides the accent color from the “Design” tab for this vehicle only.',
+    },
+    estimate: {
+      power_entity: 'Unit W, kW or MW is detected automatically. Only estimated while the vehicle is plugged in (see “Charging start / stop” → show when) and the power is above 0.',
+      power_multiply: 'Only needed if the entity has no unit and does not measure in kW, e.g. 0.001 for W.',
+      entity: 'Empty = first value with a progress bar. A new real sensor value replaces the estimate immediately; the calculated gain is shown hatched in the bar.',
     },
     fuel: {
       threshold: 'In the unit of the entity, usually %. As soon as the level drops to or below it, the glow under the car lights up in the warning color.',
@@ -1802,7 +1965,7 @@ const T_EN = {
   now: 'Current',
   combustion_note: 'Petrol/diesel cars don’t charge – charging glow and start/stop are hidden. The glow lights up for the low fuel warning instead.',
   card: {
-    service_label: 'Service', overdue: 'overdue', day: 'day', days: 'days',
+    estimated: 'Estimated from charging power', service_label: 'Service', overdue: 'overdue', day: 'day', days: 'days',
     start: 'Start', stop: 'Stop', confirm_start: 'Start charging?', confirm_stop: 'Stop charging?',
     confirm: 'Are you sure?', invalid_config: 'Invalid configuration', stub_title: 'My EV',
   },
@@ -2258,6 +2421,26 @@ class EvChargeCardEditor extends HTMLElement {
     ];
   }
 
+  _schemaEstimate() {
+    return [
+      this._group('estimate', 'mdi:battery-charging-high', [
+        { name: 'capacity', selector: { number: { min: 1, max: 1000, step: 0.1, mode: 'box', unit_of_measurement: 'kWh' } } },
+        { name: 'power_entity', selector: { entity: {} } },
+        grid(
+          { name: 'loss', selector: this._num(0, 50, 1, '%', 'box') },
+          { name: 'power_multiply', selector: { number: { min: 0, max: 1000000, step: 'any', mode: 'box' } } },
+        ),
+        { name: 'entity', selector: { entity: {} } },
+      ], true),
+    ];
+  }
+
+  _estimateData() {
+    const d = { ...(this._veh().charge_estimate || {}) };
+    if (!has(d.loss)) d.loss = ESTIMATE_DEFAULTS.loss;
+    return d;
+  }
+
   _schemaFuel() {
     return [
       this._group('fuel', 'mdi:gas-station', [
@@ -2596,6 +2779,8 @@ class EvChargeCardEditor extends HTMLElement {
             (v) => this._setVehProp('fuel', this._cleanSub(v, FUEL_DEFAULTS, this._veh().fuel, ['color']))));
         }
         if (this._type() !== 'combustion') {
+          pane.appendChild(this._makeForm('estimate', () => this._schemaEstimate(), () => this._estimateData(),
+            (v) => this._setVehProp('charge_estimate', this._cleanSub(v, ESTIMATE_DEFAULTS, this._veh().charge_estimate, []))));
           pane.appendChild(this._makeForm('cc', () => this._schemaCC(), () => this._ccData(),
             (v) => this._setVehProp('charge_control', this._cleanSub(v, CC_DEFAULTS, this._veh().charge_control, ['start_color', 'stop_color']))));
         }

@@ -115,7 +115,7 @@ Colors accept color picker values `[r, g, b]`, hex codes (`#9ccc3c`) or HA color
 | `subtitle` / `subtitle_entity` | Subtitle (text or the state of an entity) |
 | `title_tap_action` / `title_hold_action` | Actions on the title |
 | `accent_color` | Optional: own accent color for this vehicle only |
-| `image`, `charge_control`, `fuel`, `service`, `fields`, `button_bar`, `buttons` | see below – all per vehicle |
+| `image`, `charge_control`, `charge_estimate`, `fuel`, `service`, `fields`, `button_bar`, `buttons` | see below – all per vehicle |
 
 | Drive type | Charging / charging glow / start-stop | Low fuel warning |
 |---|---|---|
@@ -228,6 +228,27 @@ The flag appears as soon as **one** of the two conditions is met. If a value is 
 | `start_name`, `stop_name`, `start_icon`, `stop_icon`, `start_color`, `stop_color` | Labels and colors |
 | `show_names`, `size`, `confirm` | Show labels, size (px), ask for confirmation first |
 | `start_action` / `stop_action` | Custom action instead of an entity |
+
+### `charge_estimate` – live state of charge (electric, hybrid)
+
+Many cars report their state of charge only rarely. With this block the card calculates it between two sensor updates from the battery capacity and the wallbox charging power.
+
+```yaml
+charge_estimate:
+  capacity: 60                    # usable battery capacity in kWh
+  power_entity: sensor.wallbox_power   # W, kW or MW (unit is detected)
+  loss: 10                        # charging loss in %, default 10
+```
+
+| Option | Description |
+|---|---|
+| `capacity` | Battery capacity in kWh (required) |
+| `power_entity` | Wallbox charging power (required). Unit `W`/`kW`/`MW` is detected automatically |
+| `loss` | Charging loss in %, default `10` |
+| `power_multiply` | Optional factor to kW if the entity has no unit (e.g. `0.001` for W) |
+| `entity` | Value to estimate. Empty = first value with `show_bar` |
+
+How it works: estimation runs only while the vehicle is plugged in (`charge_control.show_entity` / `show_state`, or the glow entity) and the power is above 0. The calculated gain (`power × time × (1 − loss) / capacity`) is added to the last real sensor value; the value is capped at 100 %. As soon as the sensor delivers a new value, it replaces the estimate immediately and the calculation starts again from it. In the bar, the part that was calculated is hatched and animated while charging. Unplugged = real sensor value only.
 
 ### `fields[]` – values
 
