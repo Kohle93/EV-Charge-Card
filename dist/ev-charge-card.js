@@ -1723,6 +1723,7 @@ const T_DE = {
       entity: 'Entität', attribute: 'Attribut statt Zustand (optional)', name: 'Bezeichnung', unit: 'Einheit (überschreibt)',
       decimals: 'Nachkommastellen', multiply: 'Faktor', slot: 'Position', size: 'Größe', show_name: 'Bezeichnung anzeigen', show_icon: 'Symbol anzeigen',
       color: 'Farbe des Werts', icon: 'Symbol', show_bar: 'Fortschrittsbalken anzeigen', bar_min: 'Balken von', bar_max: 'Balken bis',
+      charging_animation: 'Beim Laden animieren', charging_icon: 'Symbol beim Laden',
       icon_color_mode: 'Symbolfarbe', icon_color: 'Eigene Symbolfarbe', icon_bg_mode: 'Symbol-Hintergrund', icon_bg_color: 'Eigene Farbe Symbol-Hintergrund',
       icon_bg_opacity: 'Deckkraft Symbol-Hintergrund', icon_shape: 'Form Symbol-Hintergrund',
       bg_mode: 'Hintergrund', bg_color: 'Hintergrundfarbe', bg_opacity: 'Deckkraft / Farbstärke', bg_gradient: 'Farbverlauf',
@@ -1777,7 +1778,9 @@ const T_DE = {
       start_action: 'Überschreibt die Start-Entität.',
       stop_action: 'Überschreibt die Stopp-Entität.',
     },
-    field: { multiply: 'z. B. 0.001 für W → kW', color: 'Farbschwellen weiter unten haben Vorrang.' },
+    field: { multiply: 'z. B. 0.001 für W → kW', color: 'Farbschwellen weiter unten haben Vorrang.',
+      charging_animation: 'Gilt für den Ladestand-Wert: Lade-Akku-Symbol, pulsierendes Symbol und Lichtreflex im Balken, solange geladen wird.',
+      charging_icon: 'Leer = Lade-Akku passend zum Ladestand.' },
     bar: {
       background: 'Leer = wie die Werte-Kacheln (Tab „Design“).',
       show_entity: 'Leer = Leiste immer anzeigen. Z. B. die Wallbox: Leiste nur zeigen, wenn ein Auto verbunden ist.',
@@ -1932,6 +1935,7 @@ const T_EN = {
       entity: 'Entity', attribute: 'Attribute instead of state (optional)', name: 'Label', unit: 'Unit (override)',
       decimals: 'Decimal places', multiply: 'Factor', slot: 'Position', size: 'Size', show_name: 'Show label', show_icon: 'Show icon',
       color: 'Value color', icon: 'Icon', show_bar: 'Show progress bar', bar_min: 'Bar from', bar_max: 'Bar to',
+      charging_animation: 'Animate while charging', charging_icon: 'Icon while charging',
       icon_color_mode: 'Icon color', icon_color: 'Custom icon color', icon_bg_mode: 'Icon background', icon_bg_color: 'Custom icon background color',
       icon_bg_opacity: 'Icon background opacity', icon_shape: 'Icon background shape',
       bg_mode: 'Background', bg_color: 'Background color', bg_opacity: 'Opacity / tint strength', bg_gradient: 'Gradient',
@@ -1986,7 +1990,9 @@ const T_EN = {
       start_action: 'Overrides the start entity.',
       stop_action: 'Overrides the stop entity.',
     },
-    field: { multiply: 'e.g. 0.001 for W → kW', color: 'Color thresholds further down take precedence.' },
+    field: { multiply: 'e.g. 0.001 for W → kW', color: 'Color thresholds further down take precedence.',
+      charging_animation: 'Applies to the state-of-charge value: charging battery icon, pulsing icon and a light sweep through the bar while charging.',
+      charging_icon: 'Empty = charging battery matching the level.' },
     bar: {
       background: 'Empty = same as the value tiles (“Design” tab).',
       show_entity: 'Empty = always show the bar. E.g. the wallbox: only show the bar when a car is connected.',
@@ -2169,7 +2175,7 @@ const toPicker = (v) => {
 };
 const isRawColor = (v) => typeof v === 'string' && has(v) && !toPicker(v);
 
-const FIELD_DEFAULTS = { slot: 'left', size: 'normal', show_name: true, show_icon: true, show_bar: false };
+const FIELD_DEFAULTS = { slot: 'left', size: 'normal', show_name: true, show_icon: true, show_bar: false, charging_animation: true };
 const SAMPLE_BUTTONS = [
   { name: 'Standard', icon: 'mdi:ev-station' },
   { name: 'Eco', icon: 'mdi:leaf' },
@@ -2642,6 +2648,8 @@ class EvChargeCardEditor extends HTMLElement {
           { name: 'bar_min', selector: { number: { min: -100000, max: 100000, step: 'any', mode: 'box' } } },
           { name: 'bar_max', selector: { number: { min: -100000, max: 100000, step: 'any', mode: 'box' } } },
         )] : []),
+        { name: 'charging_animation', selector: { boolean: {} } },
+        ...(f.charging_animation !== false ? [{ name: 'charging_icon', selector: { icon: {} } }] : []),
       ], !!f.show_bar),
     ];
   }
