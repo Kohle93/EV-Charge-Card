@@ -260,6 +260,7 @@ How it works: estimation runs only while the vehicle is plugged in (`charge_cont
 | `unit`, `decimals`, `multiply` | Unit, decimals, factor |
 | `show_name`, `show_icon` | Show/hide |
 | `show_bar`, `bar_min`, `bar_max` | Progress bar |
+| `charging_icon`, `charging_animation` | While charging, the state-of-charge value (the `charge_estimate` value, otherwise the first battery value, otherwise the first value with a bar) shows a charging battery icon and an animated bar. `charging_icon` overrides the icon, `charging_animation: false` turns it off |
 | `color_thresholds` | List of `{from, color}` – colors the icon, bar and tile |
 | `state_map` | Translate raw states into your own text, e.g. `charging: Charging` |
 | Design keys | `bg_mode`, `bg_color`, `bg_opacity`, `bg_gradient`, `icon_color_mode`, `icon_color`, `icon_bg_mode`, `icon_bg_color`, `icon_bg_opacity`, `icon_shape`, `text_color_mode`, `text_color`, `border_mode`, `border_color`, `border_width`, `shadow` |
