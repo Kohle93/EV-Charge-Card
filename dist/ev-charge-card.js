@@ -16,7 +16,7 @@
  *   Ressource: /local/ev-charge-card/ev-charge-card.js  (Typ: JavaScript-Modul)
  */
 
-const CARD_VERSION = '1.5.0';
+const CARD_VERSION = '1.5.1';
 const CARD_TYPE = 'ev-charge-card';
 const EDITOR_TYPE = 'ev-charge-card-editor';
 
@@ -493,6 +493,10 @@ const batteryIcon = (level) => {
   const n = Math.max(0, Math.min(100, Math.round(level / 10) * 10));
   return n >= 100 ? 'mdi:battery' : n <= 0 ? 'mdi:battery-outline' : `mdi:battery-${n}`;
 };
+const batteryChargingIcon = (level) => {
+  const n = Math.max(0, Math.min(100, Math.round((Number(level) || 0) / 10) * 10));
+  return n <= 0 ? 'mdi:battery-charging-outline' : `mdi:battery-charging-${n}`;
+};
 
 const localeOf = (hass) => hass?.locale?.language || hass?.language || 'de';
 
@@ -570,6 +574,19 @@ const glowInfo = (cfg, hass) => {
   return { charging, fuelLow, active: charging || fuelLow, color: !charging && fuelLow ? fuelColor : null, fuelColor };
 };
 const isCharging = (cfg, hass) => glowInfo(cfg, hass).active;
+
+// Der Ladestand-Wert: charge_estimate.entity, sonst erster Wert mit device_class battery, sonst erster Wert mit Balken
+const socFieldIndex = (cfg, hass) => {
+  const fields = cfg.fields || [];
+  const ce = cfg.charge_estimate || {};
+  if (ce.entity) {
+    const i = fields.findIndex((f) => f && f.entity === ce.entity);
+    if (i >= 0) return i;
+  }
+  const bat = fields.findIndex((f) => f && f.entity && !f.attribute && hass?.states?.[f.entity]?.attributes?.device_class === 'battery');
+  if (bat >= 0) return bat;
+  return fields.findIndex((f) => f && f.show_bar && f.entity);
+};
 
 
 /* ------------------------------------------------------------------ */
@@ -786,7 +803,7 @@ const renderImage = (cfg, hass, opts = {}) => {
 };
 
 // Eine Werte-Kachel. `override` = { text, unit, num } für Beispiele im Editor.
-const renderField = (f, i, cfg, hass, override = null, est = null) => {
+const renderField = (f, i, cfg, hass, override = null, est = null, charging = false) => {
   const st = hass?.states?.[f.entity];
   let v = override || fieldValue(f, st, hass);
   const useEst = !override && est && est.show && est.value !== null && v.num !== null && v.num !== undefined;
@@ -798,7 +815,11 @@ const renderField = (f, i, cfg, hass, override = null, est = null) => {
   const showIcon = f.show_icon !== false;
   const showName = f.show_name !== false;
   const name = f.name ?? (f.attribute ? f.attribute : st?.attributes?.friendly_name) ?? f.entity ?? '';
-  const icon = fieldIcon(f, st, v.num);
+  // Während des Ladens: Lade-Akku-Symbol (bzw. charging_icon) und animierter Balken
+  const chg = charging && f.charging_animation !== false;
+  const icon = chg && v.num !== null && v.num !== undefined
+    ? (f.charging_icon || batteryChargingIcon(v.num))
+    : fieldIcon(f, st, v.num);
 
   let bar = '';
   if (f.show_bar && v.num !== null && v.num !== undefined) {
@@ -815,7 +836,7 @@ const renderField = (f, i, cfg, hass, override = null, est = null) => {
     }
   }
   return `
-    <div class="field size-${esc(f.size || 'normal')} ${v.unavailable ? 'unavail' : ''}" data-act="field:${i}" style="${esc(styleString(vars))}">
+    <div class="field size-${esc(f.size || 'normal')} ${v.unavailable ? 'unavail' : ''} ${chg ? 'charging' : ''}" data-act="field:${i}" style="${esc(styleString(vars))}">
       ${showIcon ? `<div class="ico"><ha-icon icon="${esc(icon)}"></ha-icon></div>` : ''}
       <div class="ftext">
         ${showName ? `<div class="fname">${esc(name)}</div>` : ''}
@@ -870,9 +891,10 @@ const renderBar = (cfg, hass, opts = {}) => {
 const renderBody = (cfg, hass, opts = {}) => {
   const left = [];
   const right = [];
+  const socIdx = glowInfo(cfg, hass).charging ? socFieldIndex(cfg, hass) : -1;
   (cfg.fields || []).forEach((f, i) => {
     if (!f) return;
-    (f.slot === 'right' ? right : left).push(renderField(f, i, cfg, hass, null, opts.est && opts.est.fieldIndex === i ? opts.est : null));
+    (f.slot === 'right' ? right : left).push(renderField(f, i, cfg, hass, null, opts.est && opts.est.fieldIndex === i ? opts.est : null, i === socIdx));
   });
   const cols = Math.max(1, Number(cfg.right_columns) || 1);
   const titleInColumn = cfg.title_position === 'column';
@@ -890,6 +912,46 @@ const renderBody = (cfg, hass, opts = {}) => {
     </div>
     ${renderBar(cfg, hass)}
     ${renderService(cfg, hass, 'slide', opts.forceService)}`;
+};
+
+/* ------------------------------------------------------------------ */
+/*  DOM-Abgleich: bringt `parent` auf den Stand von `html`, ohne       */
+/*  unveränderte Elemente zu ersetzen (kein Flackern, Animationen und  */
+/*  Bilder bleiben erhalten).                                          */
+/* ------------------------------------------------------------------ */
+
+const patchNode = (cur, next) => {
+  if (cur.nodeType !== next.nodeType || cur.nodeName !== next.nodeName) {
+    cur.replaceWith(next);
+    return;
+  }
+  if (cur.nodeType === 3 || cur.nodeType === 8) {
+    if (cur.nodeValue !== next.nodeValue) cur.nodeValue = next.nodeValue;
+    return;
+  }
+  if (cur.nodeType !== 1) return;
+  for (const a of [...cur.attributes]) if (!next.hasAttribute(a.name)) cur.removeAttribute(a.name);
+  for (const a of [...next.attributes]) if (cur.getAttribute(a.name) !== a.value) cur.setAttribute(a.name, a.value);
+  // <button disabled> etc.: Property mitziehen
+  if ('disabled' in cur && cur.disabled !== next.hasAttribute('disabled')) cur.disabled = next.hasAttribute('disabled');
+  syncChildren(cur, next);
+};
+
+const syncChildren = (cur, next) => {
+  const a = [...cur.childNodes];
+  const b = [...next.childNodes];
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i += 1) {
+    if (!a[i]) cur.appendChild(b[i]);
+    else if (!b[i]) a[i].remove();
+    else patchNode(a[i], b[i]);
+  }
+};
+
+const patchChildren = (parent, html) => {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  syncChildren(parent, tpl.content);
 };
 
 /* ------------------------------------------------------------------ */
@@ -966,6 +1028,13 @@ const CARD_CSS = `
   @keyframes evc-hatch { from { background-position:0 0; } to { background-position:11.3137px 0; } }
   @media (prefers-reduced-motion: reduce) { .pbar-est.active { animation:none; } }
   .pbar-fill { height:100%; border-radius:3px; background: var(--t-accent, var(--evc-accent)); transition: width .6s ease; }
+  /* Ladestand während des Ladens: Lichtreflex läuft durch den Balken, Symbol pulsiert */
+  .field.charging .pbar-fill { background-image: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.55) 50%, transparent 100%);
+    background-size: 45% 100%; background-repeat: no-repeat; animation: evc-shine 1.8s ease-in-out infinite; }
+  .field.charging .ico ha-icon { animation: evc-chg 1.8s ease-in-out infinite; }
+  @keyframes evc-shine { from { background-position: -120% 0; } to { background-position: 220% 0; } }
+  @keyframes evc-chg { 0%,100% { opacity:1; } 50% { opacity:.45; } }
+  @media (prefers-reduced-motion: reduce) { .field.charging .pbar-fill, .field.charging .ico ha-icon { animation:none; } }
 
   /* ---------- Fahrzeugbild ---------- */
   .image-wrap { position:relative; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; min-height:80px; }
@@ -1109,6 +1178,7 @@ class EvChargeCard extends HTMLElement {
     super();
     this.attachShadow({ mode: 'open' });
     this._html = '';
+    this._bodies = [];
     this._styleKey = '';
     this._applied = new Set();
     this._holdTimer = null;
@@ -1308,13 +1378,12 @@ class EvChargeCard extends HTMLElement {
     ['glow', 'pulse', 'border', 'scale'].forEach((h) => card.classList.toggle(`hl-${h}`, on && hl === h));
   }
 
-  _template() {
+  // Gerüst: Viewport mit leeren Slides + Punkte. Wird nur neu gebaut, wenn sich Fahrzeuganzahl/-namen ändern –
+  // sonst bleiben die Punkte stehen und flackern nicht bei jedem Sensor-Update (z. B. Ladeleistung beim Laden).
+  _frame() {
     const cfg = this._config;
     const n = this._vehicles.length;
-    const slides = this._vehicles.map((_, i) => {
-      const eff = vehCfg(cfg, i);
-      return `<div class="slide" data-v="${i}" style="${esc(styleString(slideVars(eff)))}">${renderBody(eff, this._hass, { est: this._est.get(i) })}</div>`;
-    }).join('');
+    const slides = this._vehicles.map((_, i) => `<div class="slide" data-v="${i}"></div>`).join('');
     const dots = n > 1 && cfg.show_dots !== false
       ? `<div class="dots" role="tablist">${this._vehicles.map((v, i) => `<button class="dot" type="button" role="tab" data-act="dot:${i}" title="${esc(v.title || `${T.vehicle} ${i + 1}`)}" aria-label="${esc(v.title || `${T.vehicle} ${i + 1}`)}"><span></span></button>`).join('')}</div>`
       : '';
@@ -1327,16 +1396,29 @@ class EvChargeCard extends HTMLElement {
     this._ensureSkeleton();
     this._applyCardStyle();
     this._checkStack();
-    const html = this._template();
-    if (html !== this._html) {
-      this._root.innerHTML = html;
-      this._html = html;
+    const frame = this._frame();
+    const rebuilt = frame !== this._html;
+    if (rebuilt) {
+      this._root.innerHTML = frame;
+      this._html = frame;
+      this._bodies = [];
       this._viewport = this._root.querySelector('.viewport');
       this._track = this._root.querySelector('.track');
       this._slideRO.disconnect();
       this._root.querySelectorAll('.slide').forEach((s) => this._slideRO.observe(s));
-      this._applyIndex(false);
     }
+    // Jede Slide nur dort anfassen, wo sich wirklich etwas geändert hat (Bild, Glow, Animationen laufen weiter)
+    this._root.querySelectorAll('.slide').forEach((slide, i) => {
+      const eff = vehCfg(this._config, i);
+      const style = styleString(slideVars(eff));
+      if (slide.getAttribute('style') !== style) slide.setAttribute('style', style);
+      const body = renderBody(eff, this._hass, { est: this._est.get(i) });
+      if (this._bodies[i] === body) return;
+      this._bodies[i] = body;
+      if (rebuilt) slide.innerHTML = body;
+      else patchChildren(slide, body);
+    });
+    if (rebuilt) this._applyIndex(false);
   }
 
   /* ---------- Fahrzeug wechseln ---------- */
@@ -1641,6 +1723,7 @@ const T_DE = {
       entity: 'Entität', attribute: 'Attribut statt Zustand (optional)', name: 'Bezeichnung', unit: 'Einheit (überschreibt)',
       decimals: 'Nachkommastellen', multiply: 'Faktor', slot: 'Position', size: 'Größe', show_name: 'Bezeichnung anzeigen', show_icon: 'Symbol anzeigen',
       color: 'Farbe des Werts', icon: 'Symbol', show_bar: 'Fortschrittsbalken anzeigen', bar_min: 'Balken von', bar_max: 'Balken bis',
+      charging_animation: 'Beim Laden animieren', charging_icon: 'Symbol beim Laden',
       icon_color_mode: 'Symbolfarbe', icon_color: 'Eigene Symbolfarbe', icon_bg_mode: 'Symbol-Hintergrund', icon_bg_color: 'Eigene Farbe Symbol-Hintergrund',
       icon_bg_opacity: 'Deckkraft Symbol-Hintergrund', icon_shape: 'Form Symbol-Hintergrund',
       bg_mode: 'Hintergrund', bg_color: 'Hintergrundfarbe', bg_opacity: 'Deckkraft / Farbstärke', bg_gradient: 'Farbverlauf',
@@ -1695,7 +1778,9 @@ const T_DE = {
       start_action: 'Überschreibt die Start-Entität.',
       stop_action: 'Überschreibt die Stopp-Entität.',
     },
-    field: { multiply: 'z. B. 0.001 für W → kW', color: 'Farbschwellen weiter unten haben Vorrang.' },
+    field: { multiply: 'z. B. 0.001 für W → kW', color: 'Farbschwellen weiter unten haben Vorrang.',
+      charging_animation: 'Gilt für den Ladestand-Wert: Lade-Akku-Symbol, pulsierendes Symbol und Lichtreflex im Balken, solange geladen wird.',
+      charging_icon: 'Leer = Lade-Akku passend zum Ladestand.' },
     bar: {
       background: 'Leer = wie die Werte-Kacheln (Tab „Design“).',
       show_entity: 'Leer = Leiste immer anzeigen. Z. B. die Wallbox: Leiste nur zeigen, wenn ein Auto verbunden ist.',
@@ -1850,6 +1935,7 @@ const T_EN = {
       entity: 'Entity', attribute: 'Attribute instead of state (optional)', name: 'Label', unit: 'Unit (override)',
       decimals: 'Decimal places', multiply: 'Factor', slot: 'Position', size: 'Size', show_name: 'Show label', show_icon: 'Show icon',
       color: 'Value color', icon: 'Icon', show_bar: 'Show progress bar', bar_min: 'Bar from', bar_max: 'Bar to',
+      charging_animation: 'Animate while charging', charging_icon: 'Icon while charging',
       icon_color_mode: 'Icon color', icon_color: 'Custom icon color', icon_bg_mode: 'Icon background', icon_bg_color: 'Custom icon background color',
       icon_bg_opacity: 'Icon background opacity', icon_shape: 'Icon background shape',
       bg_mode: 'Background', bg_color: 'Background color', bg_opacity: 'Opacity / tint strength', bg_gradient: 'Gradient',
@@ -1904,7 +1990,9 @@ const T_EN = {
       start_action: 'Overrides the start entity.',
       stop_action: 'Overrides the stop entity.',
     },
-    field: { multiply: 'e.g. 0.001 for W → kW', color: 'Color thresholds further down take precedence.' },
+    field: { multiply: 'e.g. 0.001 for W → kW', color: 'Color thresholds further down take precedence.',
+      charging_animation: 'Applies to the state-of-charge value: charging battery icon, pulsing icon and a light sweep through the bar while charging.',
+      charging_icon: 'Empty = charging battery matching the level.' },
     bar: {
       background: 'Empty = same as the value tiles (“Design” tab).',
       show_entity: 'Empty = always show the bar. E.g. the wallbox: only show the bar when a car is connected.',
@@ -2087,7 +2175,7 @@ const toPicker = (v) => {
 };
 const isRawColor = (v) => typeof v === 'string' && has(v) && !toPicker(v);
 
-const FIELD_DEFAULTS = { slot: 'left', size: 'normal', show_name: true, show_icon: true, show_bar: false };
+const FIELD_DEFAULTS = { slot: 'left', size: 'normal', show_name: true, show_icon: true, show_bar: false, charging_animation: true };
 const SAMPLE_BUTTONS = [
   { name: 'Standard', icon: 'mdi:ev-station' },
   { name: 'Eco', icon: 'mdi:leaf' },
@@ -2560,6 +2648,8 @@ class EvChargeCardEditor extends HTMLElement {
           { name: 'bar_min', selector: { number: { min: -100000, max: 100000, step: 'any', mode: 'box' } } },
           { name: 'bar_max', selector: { number: { min: -100000, max: 100000, step: 'any', mode: 'box' } } },
         )] : []),
+        { name: 'charging_animation', selector: { boolean: {} } },
+        ...(f.charging_animation !== false ? [{ name: 'charging_icon', selector: { icon: {} } }] : []),
       ], !!f.show_bar),
     ];
   }
