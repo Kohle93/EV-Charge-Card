@@ -16,7 +16,7 @@
  *   Ressource: /local/ev-charge-card/ev-charge-card.js  (Typ: JavaScript-Modul)
  */
 
-const CARD_VERSION = '1.5.1';
+const CARD_VERSION = '1.5.2';
 const CARD_TYPE = 'ev-charge-card';
 const EDITOR_TYPE = 'ev-charge-card-editor';
 
@@ -575,7 +575,8 @@ const glowInfo = (cfg, hass) => {
 };
 const isCharging = (cfg, hass) => glowInfo(cfg, hass).active;
 
-// Der Ladestand-Wert: charge_estimate.entity, sonst erster Wert mit device_class battery, sonst erster Wert mit Balken
+// Der Ladestand-Wert wird automatisch erkannt: erster Wert mit device_class battery, sonst erster Wert mit
+// Balken, sonst erster Wert in % (auch ohne Balken). Ein altes charge_estimate.entity aus YAML gilt weiterhin.
 const socFieldIndex = (cfg, hass) => {
   const fields = cfg.fields || [];
   const ce = cfg.charge_estimate || {};
@@ -583,9 +584,13 @@ const socFieldIndex = (cfg, hass) => {
     const i = fields.findIndex((f) => f && f.entity === ce.entity);
     if (i >= 0) return i;
   }
-  const bat = fields.findIndex((f) => f && f.entity && !f.attribute && hass?.states?.[f.entity]?.attributes?.device_class === 'battery');
+  const st = (f) => hass?.states?.[f.entity];
+  const bat = fields.findIndex((f) => f && f.entity && !f.attribute && st(f)?.attributes?.device_class === 'battery');
   if (bat >= 0) return bat;
-  return fields.findIndex((f) => f && f.show_bar && f.entity);
+  const bar = fields.findIndex((f) => f && f.show_bar && f.entity);
+  if (bar >= 0) return bar;
+  return fields.findIndex((f) => f && f.entity
+    && String(f.unit ?? (f.attribute ? '' : st(f)?.attributes?.unit_of_measurement ?? '')).trim() === '%');
 };
 
 
@@ -603,13 +608,11 @@ const pluggedIn = (cfg, hass) => {
   return true;
 };
 
-// Index des Werts, der geschätzt wird: charge_estimate.entity, sonst der erste Wert mit Balken
-const estimateField = (cfg) => {
+// Index des Werts, der geschätzt wird: der automatisch erkannte Ladestand-Wert (siehe socFieldIndex)
+const estimateField = (cfg, hass) => {
   const ce = cfg.charge_estimate;
   if (!ce || vehicleType(cfg) === 'combustion' || !ce.power_entity || !(Number(ce.capacity) > 0)) return -1;
-  const fields = cfg.fields || [];
-  if (ce.entity) return fields.findIndex((f) => f && f.entity === ce.entity);
-  return fields.findIndex((f) => f && f.show_bar && f.entity);
+  return socFieldIndex(cfg, hass);
 };
 
 // Ladeleistung in kW (W / kW / MW aus der Einheit, oder power_multiply)
@@ -628,7 +631,7 @@ const powerKw = (cfg, hass) => {
 
 // Schreibt den Schätzzustand `e` fort (Energie seit dem letzten echten Sensorwert). Liefert null ohne Schätzung.
 const stepEstimate = (e, cfg, hass, now) => {
-  const idx = estimateField(cfg);
+  const idx = estimateField(cfg, hass);
   if (idx < 0) return null;
   const f = cfg.fields[idx];
   const st = hass?.states?.[f.entity];
@@ -1239,7 +1242,7 @@ class EvChargeCard extends HTMLElement {
   }
 
   _hasEstimate() {
-    return this._vehicles.some((_, i) => estimateField(vehCfg(this._config, i)) >= 0);
+    return this._vehicles.some((_, i) => estimateField(vehCfg(this._config, i), this._hass) >= 0);
   }
 
   _startTimer() {
@@ -1701,7 +1704,7 @@ const T_DE = {
     },
     estimate: {
       capacity: 'Batteriekapazität (kWh)', power_entity: 'Ladeleistung der Wallbox (Entität)', loss: 'Ladeverlust (%)',
-      power_multiply: 'Faktor zur Umrechnung in kW (optional)', entity: 'Zu schätzender Wert (optional)',
+      power_multiply: 'Faktor zur Umrechnung in kW (optional)',
     },
     fuel: {
       entity: 'Tankfüllstand (Entität)', attribute: 'Attribut statt Zustand (optional)', threshold: 'Warnen ab Füllstand (höchstens)', color: 'Farbe der Warnung',
@@ -1761,9 +1764,8 @@ const T_DE = {
       accent_color: 'Überschreibt die Akzentfarbe aus dem Tab „Design“ nur für dieses Fahrzeug.',
     },
     estimate: {
-      power_entity: 'Einheit W, kW oder MW wird automatisch erkannt. Geschätzt wird nur, solange das Fahrzeug eingesteckt ist (siehe „Laden Start / Stopp“ → Anzeigen wenn) und die Leistung größer 0 ist.',
+      power_entity: 'Einheit W, kW oder MW wird automatisch erkannt. Geschätzt wird nur, solange das Fahrzeug eingesteckt ist (siehe „Laden Start / Stopp“ → Anzeigen wenn) und die Leistung größer 0 ist. Geschätzt wird automatisch der Ladestand-Wert (Akku-Sensor, sonst Wert mit Balken, sonst Wert in %).',
       power_multiply: 'Nur nötig, wenn die Entität keine Einheit hat und nicht in kW misst, z. B. 0.001 für W.',
-      entity: 'Leer = erster Wert mit Fortschrittsbalken. Ein neuer echter Sensorwert ersetzt die Schätzung sofort; der berechnete Zuwachs erscheint schraffiert im Balken.',
     },
     fuel: {
       threshold: 'In der Einheit der Entität, meist %. Sobald der Füllstand darauf oder darunter fällt, leuchtet der Glow unter dem Auto in der Warnfarbe.',
@@ -1913,7 +1915,7 @@ const T_EN = {
     },
     estimate: {
       capacity: 'Battery capacity (kWh)', power_entity: 'Wallbox charging power (entity)', loss: 'Charging loss (%)',
-      power_multiply: 'Factor to convert to kW (optional)', entity: 'Value to estimate (optional)',
+      power_multiply: 'Factor to convert to kW (optional)',
     },
     fuel: {
       entity: 'Fuel level (entity)', attribute: 'Attribute instead of state (optional)', threshold: 'Warn at level (or below)', color: 'Warning color',
@@ -1973,9 +1975,8 @@ const T_EN = {
       accent_color: 'Overrides the accent color from the “Design” tab for this vehicle only.',
     },
     estimate: {
-      power_entity: 'Unit W, kW or MW is detected automatically. Only estimated while the vehicle is plugged in (see “Charging start / stop” → show when) and the power is above 0.',
+      power_entity: 'Unit W, kW or MW is detected automatically. Only estimated while the vehicle is plugged in (see “Charging start / stop” → show when) and the power is above 0. The state-of-charge value is detected automatically (battery sensor, otherwise a value with a bar, otherwise a value in %).',
       power_multiply: 'Only needed if the entity has no unit and does not measure in kW, e.g. 0.001 for W.',
-      entity: 'Empty = first value with a progress bar. A new real sensor value replaces the estimate immediately; the calculated gain is shown hatched in the bar.',
     },
     fuel: {
       threshold: 'In the unit of the entity, usually %. As soon as the level drops to or below it, the glow under the car lights up in the warning color.',
@@ -2518,7 +2519,6 @@ class EvChargeCardEditor extends HTMLElement {
           { name: 'loss', selector: this._num(0, 50, 1, '%', 'box') },
           { name: 'power_multiply', selector: { number: { min: 0, max: 1000000, step: 'any', mode: 'box' } } },
         ),
-        { name: 'entity', selector: { entity: {} } },
       ], true),
     ];
   }

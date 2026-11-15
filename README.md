@@ -246,9 +246,8 @@ charge_estimate:
 | `power_entity` | Wallbox charging power (required). Unit `W`/`kW`/`MW` is detected automatically |
 | `loss` | Charging loss in %, default `10` |
 | `power_multiply` | Optional factor to kW if the entity has no unit (e.g. `0.001` for W) |
-| `entity` | Value to estimate. Empty = first value with `show_bar` |
 
-How it works: estimation runs only while the vehicle is plugged in (`charge_control.show_entity` / `show_state`, or the glow entity) and the power is above 0. The calculated gain (`power × time × (1 − loss) / capacity`) is added to the last real sensor value; the value is capped at 100 %. As soon as the sensor delivers a new value, it replaces the estimate immediately and the calculation starts again from it. In the bar, the part that was calculated is hatched and animated while charging. Unplugged = real sensor value only.
+How it works: estimation runs only while the vehicle is plugged in (`charge_control.show_entity` / `show_state`, or the glow entity) and the power is above 0. The calculated gain (`power × time × (1 − loss) / capacity`) is added to the last real sensor value; the value is capped at 100 %. As soon as the sensor delivers a new value, it replaces the estimate immediately and the calculation starts again from it. Which value is estimated is detected automatically: the first value whose entity has `device_class: battery`, otherwise the first value with `show_bar`, otherwise the first value in `%` – so it also works without a bar. In the bar, the part that was calculated is hatched and animated while charging. Unplugged = real sensor value only.
 
 ### `fields[]` – values
 
@@ -260,7 +259,7 @@ How it works: estimation runs only while the vehicle is plugged in (`charge_cont
 | `unit`, `decimals`, `multiply` | Unit, decimals, factor |
 | `show_name`, `show_icon` | Show/hide |
 | `show_bar`, `bar_min`, `bar_max` | Progress bar |
-| `charging_icon`, `charging_animation` | While charging, the state-of-charge value (the `charge_estimate` value, otherwise the first battery value, otherwise the first value with a bar) shows a charging battery icon and an animated bar. `charging_icon` overrides the icon, `charging_animation: false` turns it off |
+| `charging_icon`, `charging_animation` | While charging, the state-of-charge value (the first battery value, otherwise the first value with a bar, otherwise the first value in %) shows a charging battery icon and an animated bar. `charging_icon` overrides the icon, `charging_animation: false` turns it off |
 | `color_thresholds` | List of `{from, color}` – colors the icon, bar and tile |
 | `state_map` | Translate raw states into your own text, e.g. `charging: Charging` |
 | Design keys | `bg_mode`, `bg_color`, `bg_opacity`, `bg_gradient`, `icon_color_mode`, `icon_color`, `icon_bg_mode`, `icon_bg_color`, `icon_bg_opacity`, `icon_shape`, `text_color_mode`, `text_color`, `border_mode`, `border_color`, `border_width`, `shadow` |
